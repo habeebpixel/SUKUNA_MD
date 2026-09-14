@@ -808,6 +808,21 @@ class Database {
         return results;
     }
 
+    // ── Owner Tag — persistent reaction for owner/mod messages ─────────────
+    getOwnerTag(phoneNumber) {
+        if (!this.data.users[phoneNumber]) this.data.users[phoneNumber] = {};
+        return this.data.users[phoneNumber].ownerTag || { enabled: true, emoji: '🩸' };
+    }
+    setOwnerTag(phoneNumber, value) {
+        if (!this.data.users[phoneNumber]) this.data.users[phoneNumber] = {};
+        this.data.users[phoneNumber].ownerTag = {
+            enabled: value?.enabled !== false,
+            emoji: String(value?.emoji || '🩸').trim().slice(0, 12) || '🩸',
+        };
+        this.save('users');
+        return this.data.users[phoneNumber].ownerTag;
+    }
+
     // ── Do Not Disturb (DND) — owner-only away-status auto-reply ───────────
     getDndMode(phoneNumber) {
         if (!this.data.users[phoneNumber]) this.data.users[phoneNumber] = {};
