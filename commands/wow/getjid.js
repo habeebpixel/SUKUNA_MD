@@ -1,5 +1,5 @@
 'use strict';
-const { resolveMentionOrReply, extractNumber, canReveal } = require('../../utils/jidTools');
+const { resolveMentionOrReply, resolvePhoneJid, canReveal, sendCopyCard } = require('../../utils/jidTools');
 
 module.exports = {
     name: 'getjid',
@@ -13,13 +13,23 @@ module.exports = {
         }
         const jid = resolveMentionOrReply(msg, sender, from);
         if (!jid) return reply('⚠️ Reply to a user’s message, tag a user, or use `.getjid` for yourself.');
-        const number = extractNumber(jid, sock);
-        return reply(
-            `🪪 *REAL USER JID*\n` +
+        const resolved = await resolvePhoneJid(jid, sock);
+        const body =
+            `🪪 *REAL USER IDENTITY*\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
-            `👤 *JID:* \`${jid}\`\n` +
-            (number ? `📞 *Number:* +${number}\n` : '📞 *Number:* unavailable for this LID\n') +
-            `🔐 *Privacy:* visible to authorized users only`
-        );
+            `👤 *JID:* \`${resolved.jid || jid}\`\n` +
+            (resolved.number ? `📞 *Number:* +${resolved.number}\n` : '📞 *Number:* unavailable for this LID\n') +
+            (resolved.jid !== jid ? `🧩 *Original LID:* \`${jid}\`\n` : '') +
+            `🔐 *Privacy:* visible to authorized users only`;
+        return sendCopyCard({
+            sock, msg, from,
+            body,
+            title: '✦ REAL USER JID ✦',
+            copies: [
+                { label: '📋 Copy JID', value: resolved.jid || jid },
+                ...(resolved.number ? [{ label: '📋 Copy Number', value: `+${resolved.number}` }] : []),
+                ...(resolved.jid !== jid ? [{ label: '📋 Copy LID', value: jid }] : [])
+            ]
+        });
     }
 };

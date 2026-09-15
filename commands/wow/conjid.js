@@ -1,5 +1,5 @@
 'use strict';
-const { resolveMentionOrReply, resolveArgument, extractNumber, canReveal } = require('../../utils/jidTools');
+const { resolveMentionOrReply, resolveArgument, resolvePhoneJid, canReveal, sendCopyCard } = require('../../utils/jidTools');
 
 module.exports = {
     name: 'conjid',
@@ -13,16 +13,29 @@ module.exports = {
         }
         const jid = resolveArgument(args) || (args.length ? null : resolveMentionOrReply(msg, sender, from));
         if (!jid) return reply('⚠️ Use `.conjid 2348012345678@s.whatsapp.net`, reply to a user, tag a user, or use `.conjid` for yourself.');
-        const number = extractNumber(jid, sock);
-        if (!number) {
-            return reply(`🪪 *JID RECEIVED*\n\n\`${jid}\`\n\n⚠️ This is a LID and the linked phone number is not available through the current session.`);
+        const resolved = await resolvePhoneJid(jid, sock);
+        if (!resolved.number) {
+            return sendCopyCard({
+                sock, msg, from,
+                body: `🪪 *JID RECEIVED*\n━━━━━━━━━━━━━━━━━━\n\`${resolved.jid || jid}\`\n\n⚠️ This is a LID and the linked phone number is not available through the current session.`,
+                title: '✦ JID RECEIVED ✦',
+                copies: [{ label: '📋 Copy LID', value: resolved.jid || jid }]
+            });
         }
-        return reply(
-            `✨ *JID CONVERTED*\n` +
-            `━━━━━━━━━━━━━━━━━━\n` +
-            `🪪 *JID:* \`${jid}\`\n` +
-            `📞 *Real number:* +${number}\n` +
-            `✅ Conversion complete`
-        );
+        return sendCopyCard({
+            sock, msg, from,
+            body:
+                `✨ *JID CONVERTED*\n` +
+                `━━━━━━━━━━━━━━━━━━\n` +
+                `🪪 *JID:* \`${resolved.jid}\`\n` +
+                `📞 *Real number:* +${resolved.number}\n` +
+                `✅ Conversion complete`,
+            title: '✦ JID CONVERTER ✦',
+            copies: [
+                { label: '📋 Copy JID', value: resolved.jid },
+                { label: '📋 Copy Number', value: `+${resolved.number}` },
+                ...(resolved.jid !== jid ? [{ label: '📋 Copy LID', value: jid }] : [])
+            ]
+        });
     }
 };
