@@ -10,28 +10,43 @@ function normalizeJid(value) {
 }
 
 function getContextInfo(msg = {}) {
-    const message = msg.message || {};
-    return message.extendedTextMessage?.contextInfo
-        || message.imageMessage?.contextInfo
-        || message.videoMessage?.contextInfo
-        || message.documentMessage?.contextInfo
-        || message.audioMessage?.contextInfo
-        || message.stickerMessage?.contextInfo
-        || {};
+    let message = msg.message || {};
+    // Commands can arrive inside ephemeral/view-once/document wrappers. Walk
+    // those wrappers so a reply target is not lost before getjid sees it.
+    for (let depth = 0; depth < 6 && message; depth += 1) {
+        const context = message.extendedTextMessage?.contextInfo
+            || message.imageMessage?.contextInfo
+            || message.videoMessage?.contextInfo
+            || message.documentMessage?.contextInfo
+            || message.audioMessage?.contextInfo
+            || message.stickerMessage?.contextInfo;
+        if (context) return context;
+        message = message.ephemeralMessage?.message
+            || message.viewOnceMessage?.message
+            || message.viewOnceMessageV2?.message
+            || message.documentWithCaptionMessage?.message
+            || null;
+    }
+    return {};
 }
 
 function resolveMentionOrReply(msg, sender, from) {
     const context = getContextInfo(msg);
     const mentioned = Array.isArray(context.mentionedJid) ? context.mentionedJid : [];
     const mentionedAlt = Array.isArray(context.mentionedJidAlt) ? context.mentionedJidAlt : [];
-    const candidates = [
+    // In a group, context.remoteJid is the group itself—not the person whose
+    // message was quoted. Never use it as the requested user's JID. Prefer an
+    // explicit mention, then the quoted participant, and only fall back to the
+    // current sender when the command is not targeting someone else.
+    const targetCandidates = [
         ...mentionedAlt, ...mentioned,
-        context.participantAlt, context.remoteJidAlt,
-        context.participant, context.remoteJid,
-        msg?.key?.participantAlt, msg?.key?.remoteJidAlt,
-        sender, from
+        context.participantAlt, context.participant,
+        msg?.key?.participantAlt
     ].filter(Boolean).map(normalizeJid).filter(Boolean);
-    return candidates.find(jid => jid.endsWith('@s.whatsapp.net')) || candidates[0] || null;
+    const target = targetCandidates.find(jid => jid.endsWith('@s.whatsapp.net'))
+        || targetCandidates[0];
+    if (target) return target;
+    return normalizeJid(sender) || normalizeJid(from);
 }
 
 async function resolvePhoneJid(jid, sock) {
