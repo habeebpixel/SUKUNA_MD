@@ -85,10 +85,68 @@ function classifyJid(jid) {
     return { prefix: `+${digits.slice(0, Math.min(3, digits.length))}`, flag: '🌐', country: 'Other/unknown' };
 }
 
+const JID_KEYS = new Set([
+    'jid', 'id', 'participant', 'participantJid', 'user', 'userJid',
+    'requester', 'requesterJid', 'phone', 'phoneNumber', 'number'
+]);
+const CONTAINER_KEYS = new Set([
+    'requests', 'participants', 'items', 'results', 'data', 'entries',
+    'membership_approval_requests', 'membership_approval_request', 'attrs',
+    'user', 'requester', 'participant', 'data'
+]);
+
+function looksLikeJidOrPhone(value) {
+    if (typeof value !== 'string') return false;
+    const text = value.trim();
+    const digits = text.replace(/\D/g, '');
+    return digits.length >= 7 && (text.includes('@') || /^\+?\d[\d\s().-]{6,}$/.test(text));
+}
+
+function extractRequestJid(request) {
+    if (typeof request === 'string') return looksLikeJidOrPhone(request) ? request : null;
+    if (!request || typeof request !== 'object') return null;
+    for (const [key, value] of Object.entries(request)) {
+        if (JID_KEYS.has(key) && looksLikeJidOrPhone(String(value || ''))) return String(value);
+    }
+    // Some binary-node adapters expose the participant under attrs or a nested user object.
+    for (const [key, value] of Object.entries(request)) {
+        if (CONTAINER_KEYS.has(key)) {
+            const found = extractRequestJid(value);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+function extractRequestJids(input) {
+    const found = [];
+    const visit = (value) => {
+        if (Array.isArray(value)) {
+            for (const item of value) visit(item);
+            return;
+        }
+        if (typeof value === 'string') {
+            const jid = extractRequestJid(value);
+            if (jid) found.push(jid);
+            return;
+        }
+        if (!value || typeof value !== 'object') return;
+        const direct = extractRequestJid(value);
+        if (direct) {
+            found.push(direct);
+            return;
+        }
+        for (const [key, child] of Object.entries(value)) {
+            if (CONTAINER_KEYS.has(key) || Array.isArray(child)) visit(child);
+        }
+    };
+    visit(input);
+    return [...new Map(found.map(jid => [String(jid), jid])).values()];
+}
+
 function aggregateRequests(requests = []) {
     const buckets = new Map();
-    for (const request of Array.isArray(requests) ? requests : []) {
-        const jid = request?.jid || request?.id || request?.participant || request?.user;
+    for (const jid of extractRequestJids(requests)) {
         const category = classifyJid(jid);
         const current = buckets.get(category.prefix) || { ...category, count: 0 };
         current.count += 1;
@@ -121,18 +179,19 @@ module.exports = {
         }
         try {
             const requests = await sock.groupRequestParticipantsList(from);
-            const rows = aggregateRequests(requests);
+            const requestJids = extractRequestJids(requests);
+            const rows = aggregateRequests(requestJids);
             let subject = '';
             try {
                 const metadata = await sock.groupMetadata(from);
                 subject = metadata?.subject || '';
             } catch (_) {}
-            return reply(formatReport(rows, requests?.length || 0, subject, prefix));
+            return reply(formatReport(rows, requestJids.length, subject, prefix));
         } catch (error) {
             console.error('[listrequestinfo] failed:', error?.message || error);
             return reply('❌ I could not read this group’s pending requests. Make sure I have permission to view them, then try again.');
         }
     },
-    _private: { digitsFromJid, classifyJid, aggregateRequests, formatReport, COUNTRY_CODES }
+    _private: { digitsFromJid, classifyJid, extractRequestJid, extractRequestJids, aggregateRequests, formatReport, COUNTRY_CODES }
 };
 
