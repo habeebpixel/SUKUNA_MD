@@ -14,12 +14,17 @@ function getContextInfo(msg = {}) {
     // Commands can arrive inside ephemeral/view-once/document wrappers. Walk
     // those wrappers so a reply target is not lost before getjid sees it.
     for (let depth = 0; depth < 6 && message; depth += 1) {
-        const context = message.extendedTextMessage?.contextInfo
+        const context = message.contextInfo
+            || message.extendedTextMessage?.contextInfo
             || message.imageMessage?.contextInfo
             || message.videoMessage?.contextInfo
             || message.documentMessage?.contextInfo
             || message.audioMessage?.contextInfo
-            || message.stickerMessage?.contextInfo;
+            || message.stickerMessage?.contextInfo
+            || message.buttonsResponseMessage?.contextInfo
+            || message.listResponseMessage?.contextInfo
+            || message.templateButtonReplyMessage?.contextInfo
+            || message.interactiveResponseMessage?.contextInfo;
         if (context) return context;
         message = message.ephemeralMessage?.message
             || message.viewOnceMessage?.message
@@ -40,16 +45,18 @@ function resolveMentionOrReply(msg, sender, from) {
     // current sender when the command is not targeting someone else.
     const targetCandidates = [
         ...mentionedAlt, ...mentioned,
-        context.participantAlt, context.participant,
-        msg?.key?.participantAlt
+        context.participantAlt, context.participant
     ].filter(Boolean).map(normalizeJid).filter(Boolean);
     const target = targetCandidates.find(jid => jid.endsWith('@s.whatsapp.net'))
         || targetCandidates[0];
     if (target) return target;
+    // Do not silently report the command sender when WhatsApp marked this as
+    // a reply but omitted the quoted participant.
+    if (context.quotedMessage || context.stanzaId) return null;
     return normalizeJid(sender) || normalizeJid(from);
 }
 
-async function resolvePhoneJid(jid, sock) {
+async function resolvePhoneJid(jid, sock, from) {
     const normalized = normalizeJid(jid);
     if (!normalized) return { jid: null, number: null, source: 'invalid' };
     if (normalized.endsWith('@s.whatsapp.net')) {
@@ -65,6 +72,22 @@ async function resolvePhoneJid(jid, sock) {
     if (resolved?.endsWith('@s.whatsapp.net')) {
         return { jid: resolved, number: resolved.split('@')[0].split(':')[0], source: 'lid-mapping' };
     }
+    // Some Baileys updates expose only an @lid in the reply context. Group
+    // metadata often contains the matching phone JID, so resolve it there.
+    try {
+        if (String(from || '').endsWith('@g.us')) {
+            const metadata = await sock?.groupMetadata?.(from);
+            const match = metadata?.participants?.find((participant) => {
+                const ids = [participant?.id, participant?.jid, participant?.lid, participant?.phoneNumber]
+                    .filter(Boolean).map(normalizeJid);
+                return ids.includes(normalized);
+            });
+            const phoneJid = normalizeJid(match?.phoneNumber) || normalizeJid(match?.id);
+            if (phoneJid?.endsWith('@s.whatsapp.net')) {
+                return { jid: phoneJid, number: phoneJid.split('@')[0].split(':')[0], source: 'group-metadata' };
+            }
+        }
+    } catch (_) {}
     return { jid: normalized, number: null, source: 'lid-unresolved' };
 }
 

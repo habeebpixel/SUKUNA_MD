@@ -13,7 +13,7 @@ module.exports = {
         }
         const jid = resolveMentionOrReply(msg, sender, from);
         if (!jid) return reply('⚠️ Reply to a user’s message, tag a user, or use `.getjid` for yourself.');
-        const resolved = await resolvePhoneJid(jid, sock);
+        const resolved = await resolvePhoneJid(jid, sock, from);
         const body =
             `🪪 *REAL USER IDENTITY*\n` +
             `━━━━━━━━━━━━━━━━━━\n` +
