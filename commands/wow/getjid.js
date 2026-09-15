@@ -22,7 +22,7 @@ module.exports = {
             (resolved.jid !== jid ? `🧩 *Original LID:* \`${jid}\`\n` : '') +
             `🔐 *Privacy:* visible to authorized users only`;
         return sendCopyCard({
-            sock, msg, from,
+            sock, msg, from, reply,
             body,
             title: '✦ REAL USER JID ✦',
             copies: [

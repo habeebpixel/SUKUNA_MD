@@ -16,14 +16,14 @@ module.exports = {
         const resolved = await resolvePhoneJid(jid, sock);
         if (!resolved.number) {
             return sendCopyCard({
-                sock, msg, from,
+                sock, msg, from, reply,
                 body: `🪪 *JID RECEIVED*\n━━━━━━━━━━━━━━━━━━\n\`${resolved.jid || jid}\`\n\n⚠️ This is a LID and the linked phone number is not available through the current session.`,
                 title: '✦ JID RECEIVED ✦',
                 copies: [{ label: '📋 Copy LID', value: resolved.jid || jid }]
             });
         }
         return sendCopyCard({
-            sock, msg, from,
+            sock, msg, from, reply,
             body:
                 `✨ *JID CONVERTED*\n` +
                 `━━━━━━━━━━━━━━━━━━\n` +

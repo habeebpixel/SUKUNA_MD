@@ -1,5 +1,4 @@
 'use strict';
-const { generateWAMessageFromContent, proto } = require('@pasqua-baileys/baileys');
 
 function normalizeJid(value) {
     const raw = String(value || '').trim();
@@ -67,9 +66,10 @@ function canReveal({ isGroup, isOwner, isAdmin }) {
     return !isGroup || Boolean(isOwner || isAdmin);
 }
 
-async function sendCopyCard({ sock, msg, from, body, title, copies = [] }) {
+async function sendCopyCard({ sock, msg, from, body, title, copies = [], reply }) {
     const validCopies = copies.filter(item => item?.value);
     try {
+        const { generateWAMessageFromContent, proto } = require('@pasqua-baileys/baileys');
         const buttons = validCopies.map((item, index) => ({
             name: 'cta_copy',
             buttonParamsJson: JSON.stringify({
@@ -94,7 +94,9 @@ async function sendCopyCard({ sock, msg, from, body, title, copies = [] }) {
         await sock.relayMessage(from, wrapped.message, { messageId: wrapped.key.id });
     } catch (error) {
         console.error('[jid:copy-card]', error?.message || error);
-        await sock.sendMessage(from, { text: `${body}\n\n${validCopies.map(item => `📋 ${item.label}: ${item.value}`).join('\n')}` }, { quoted: msg });
+        const fallback = `${body}\n\n${validCopies.map(item => `📋 ${item.label}: ${item.value}`).join('\n')}`;
+        if (typeof reply === 'function') return reply(fallback);
+        return sock.sendMessage(from, { text: fallback }, { quoted: msg });
     }
 }
 
