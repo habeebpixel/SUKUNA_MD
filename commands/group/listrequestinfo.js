@@ -155,12 +155,35 @@ function aggregateRequests(requests = []) {
     return [...buckets.values()].sort((a, b) => b.count - a.count || a.prefix.localeCompare(b.prefix));
 }
 
+function normalizeCountryCode(value) {
+    return String(value || '').replace(/\D/g, '');
+}
+
+function filterRequestsByCountry(jids, countryCode) {
+    const code = normalizeCountryCode(countryCode);
+    if (!code) return [];
+    return extractRequestJids(jids).filter(jid => digitsFromJid(jid).startsWith(code));
+}
+
 function formatReport(rows, total, subject, prefix = '.') {
     if (!total) {
         return `📋 *REQUEST INFO*\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n🏷️ *Group:* ${subject || 'This group'}\n📭 No pending join requests found.`;
     }
     const lines = rows.map(row => `${row.flag} *${row.prefix}* — *${row.count} req*`);
-    return `📋 *REQUEST INFO*\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n🏷️ *Group:* ${subject || 'This group'}\n📊 *Total requests:* ${total}\n\n${lines.join('\n')}\n\n_Use ${prefix}linfo to refresh this report._`;
+    return `📋 *REQUEST INFO*\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n🏷️ *Group:* ${subject || 'This group'}\n📊 *Total requests:* ${total}\n\n${lines.join('\n')}\n\n_Use ${prefix}linfo 234 to list requesters from Nigeria._`;
+}
+
+function formatCountryRequests(jids, countryCode, subject, prefix = '.') {
+    const code = normalizeCountryCode(countryCode);
+    const rows = extractRequestJids(jids);
+    const matching = filterRequestsByCountry(rows, code);
+    const category = classifyJid(matching[0] || code);
+    if (!matching.length) {
+        return `📋 *REQUEST INFO — +${code}*\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n🏷️ *Group:* ${subject || 'This group'}\n📭 No requests found for *+${code}*.`;
+    }
+    const numbers = matching.map(jid => `+${digitsFromJid(jid)}`);
+    const lines = numbers.map((number, index) => `${index + 1}. ${number}`);
+    return `📋 *${category.flag} REQUESTERS FROM +${code}*\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n🏷️ *Group:* ${subject || 'This group'}\n🌍 *Country:* ${category.country}\n📊 *Matching requests:* ${matching.length}\n\n${lines.join('\n')}\n\n_Use ${prefix}linfo for the full country summary._`;
 }
 
 module.exports = {
@@ -170,7 +193,7 @@ module.exports = {
     usage: '.linfo',
     category: 'group',
     groupOnly: true,
-    async execute({ sock, from, reply, prefix = '.' }) {
+    async execute({ sock, from, args = [], reply, prefix = '.' }) {
         if (!String(from || '').endsWith('@g.us')) {
             return reply('⚠️ This command can only be used inside a group.');
         }
@@ -180,18 +203,31 @@ module.exports = {
         try {
             const requests = await sock.groupRequestParticipantsList(from);
             const requestJids = extractRequestJids(requests);
-            const rows = aggregateRequests(requestJids);
+            const requestedCode = normalizeCountryCode(args[0]);
             let subject = '';
             try {
                 const metadata = await sock.groupMetadata(from);
                 subject = metadata?.subject || '';
             } catch (_) {}
-            return reply(formatReport(rows, requestJids.length, subject, prefix));
+            if (requestedCode) {
+                const matching = filterRequestsByCountry(requestJids, requestedCode);
+                const report = formatCountryRequests(requestJids, requestedCode, subject, prefix);
+                // Keep large requester lists within WhatsApp’s message-size limits.
+                if (report.length <= 12000) return reply(report);
+                const header = report.slice(0, report.indexOf('\n\n', report.indexOf('Matching requests:')) + 2);
+                const numbers = matching.map(jid => `+${digitsFromJid(jid)}`);
+                await reply(`${header}${numbers.slice(0, 250).map((number, index) => `${index + 1}. ${number}`).join('\n')}`);
+                for (let offset = 250; offset < numbers.length; offset += 250) {
+                    await reply(numbers.slice(offset, offset + 250).map((number, index) => `${offset + index + 1}. ${number}`).join('\n'));
+                }
+                return;
+            }
+            return reply(formatReport(aggregateRequests(requestJids), requestJids.length, subject, prefix));
         } catch (error) {
             console.error('[listrequestinfo] failed:', error?.message || error);
             return reply('❌ I could not read this group’s pending requests. Make sure I have permission to view them, then try again.');
         }
     },
-    _private: { digitsFromJid, classifyJid, extractRequestJid, extractRequestJids, aggregateRequests, formatReport, COUNTRY_CODES }
+    _private: { digitsFromJid, classifyJid, extractRequestJid, extractRequestJids, aggregateRequests, normalizeCountryCode, filterRequestsByCountry, formatReport, formatCountryRequests, COUNTRY_CODES }
 };
 
