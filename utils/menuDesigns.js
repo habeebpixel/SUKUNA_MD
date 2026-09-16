@@ -12,7 +12,7 @@
  */
 
 const DESIGNS = [
-    'nor', 'neon', 'classy', 'cyber', 'royal', 'ghost', 'matrix', 'samurai', 'aurora', 'arcade',
+    'default', 'nor', 'neon', 'classy', 'cyber', 'royal', 'ghost', 'matrix', 'samurai', 'aurora', 'arcade',
     // ── 10 new peak designs ──
     'crimson', 'oracle', 'glitch', 'runic', 'obsidian',
     'vapor', 'mirage', 'eclipse', 'phantom', 'monolith',
@@ -1207,7 +1207,43 @@ function designKord(ctx) {
     return c;
 }
 
+// ── Design: default — the attached SUKUNA MD boxed command menu ────────
+function designDefault(ctx) {
+    const { userTag, prefix, total, uptime, time, date, mode, version,
+            status, platform, sortedCategories, byCategory, CATEGORY_LABELS } = ctx;
+    let c = '';
+
+    c += `♲︎☘︎⟨ SUKUNA MD™ ⟩☘︎♲︎\n\n`;
+    c += ` ┌──〔 SYSTEM INFO 〕──┐\n`;
+    c += ` 𖥂 User    : ${userTag}\n`;
+    c += ` 𖥂 Prefix  : ${prefix}\n`;
+    c += ` 𖥂 Cmds    : ${total} commands\n`;
+    c += ` 𖥂 Uptime  : ${uptime}\n`;
+    c += ` 𖥂 Time    : ${time}\n`;
+    c += ` 𖥂 Date    : ${date}\n`;
+    c += ` 𖥂 Mode    : ${mode}\n`;
+    c += ` 𖥂 Version : ${version}\n`;
+    c += ` 𖥂 Status  : ${status}\n`;
+    c += ` 𖥂 Platform: ${platform}\n`;
+    c += ` └────────────────────┘\n\n`;
+
+    for (const cat of sortedCategories) {
+        const names = byCategory[cat];
+        if (!names?.length) continue;
+        const label = CATEGORY_LABELS[cat] || (cat[0].toUpperCase() + cat.slice(1));
+        c += `╔═════════════════════╗\n`;
+        c += `       𒊹︎  ${label.toUpperCase()}\n`;
+        c += `╚═════════════════════╝\n`;
+        for (const name of names) c += ` ║ 𖥂 ${prefix}${name}\n`;
+        c += `\n`;
+    }
+
+    c += `♲︎☘︎⟨ SUKUNA MD™ · ${total} COMMANDS ⟩☘︎♲︎`;
+    return c;
+}
+
 const BUILDERS = {
+    default: designDefault,
     nor: designNor,
     neon: designNeon,
     classy: designClassy,

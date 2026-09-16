@@ -1,7 +1,7 @@
 /**
  * .setdesign <name>
  * Switches the menu design used by .menu for this bot session.
- * Designs: nor (original), neon, classy, cyber, royal, ghost, ..., codex, dark, onyx
+ * Designs: default (new deployments), nor, neon, classy, cyber, royal, ghost, ..., codex, dark, onyx
  */
 
 const database = require('../../utils/database');

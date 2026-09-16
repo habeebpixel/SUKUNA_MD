@@ -193,8 +193,8 @@ module.exports = {
         const credits  = 'pasqua tech';
 
         // ── Resolve current menu design ──
-        let designKey = 'pasqua';
-        try { designKey = (database.getMenuDesign(phoneNumber) || 'pasqua').toLowerCase(); }
+        let designKey = 'default';
+        try { designKey = (database.getMenuDesign(phoneNumber) || 'default').toLowerCase(); }
         catch (_) {}
 
         // ── Resolve the active font once so every text path uses it ──
@@ -280,7 +280,14 @@ module.exports = {
         // box-drawing char, emoji, symbol and @mention passes through intact.
         // Because we used plainText above instead of boldItalic(), headers and
         // category labels are still plain Latin here and get converted too.
-        if (activeFontNum !== 1) {
+        if (designKey === 'default') {
+            // The new default design is rendered in bold sans-serif Unicode.
+            // Symbols, emoji, box drawing, and mentions remain unchanged.
+            try {
+                const { boldSans } = require('../../utils/styleBox');
+                caption = caption.replace(/[A-Za-z0-9]/g, (char) => boldSans(char));
+            } catch (_) {}
+        } else if (activeFontNum !== 1) {
             try { caption = fontSystem.convert(caption, activeFontNum); } catch (_) {}
         }
 
