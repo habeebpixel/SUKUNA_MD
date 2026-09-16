@@ -18,7 +18,9 @@ module.exports = {
     async execute({ reply, args, phoneNumber, sender, isOwner, isMod }) {
         if (!isOwner && !isMod) return reply('❌ *Owner or Mod only!*');
 
-        const actorPhone = userPhoneFrom(sender, phoneNumber);
+        // Keep the linked session number as the canonical owner identity even
+        // when WhatsApp supplies an @lid sender JID for the paired account.
+        const actorPhone = isOwner ? userPhoneFrom(phoneNumber, phoneNumber) : userPhoneFrom(sender, phoneNumber);
         const current = database.getOwnerTag(phoneNumber);
         const action = String(args[0] || 'status').toLowerCase();
 
@@ -63,4 +65,3 @@ module.exports = {
         return reply('❓ Usage: `.ownertag on` | `.ownertag off` | `.ownertag set <emoji>`');
     },
 };
-

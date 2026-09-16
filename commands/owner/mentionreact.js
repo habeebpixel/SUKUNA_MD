@@ -20,8 +20,11 @@ module.exports = {
     async execute({ reply, args, phoneNumber, sender, isOwner, isMod }) {
         if (!isOwner && !isMod) return reply('❌ Owner or Mod only!');
 
-        // userPhone = the actual phone number of whoever is running this command
-        const userPhone = sender.split('@')[0].split(':')[0].replace(/\D/g, '');
+        // Owner messages may arrive with an @lid JID. The session phone number
+        // is the authoritative identity for the linked owner; storing the LID
+        // here makes the runtime lookup (which uses the real owner number) miss.
+        const senderPhone = String(sender || '').split('@')[0].split(':')[0].replace(/\D/g, '');
+        const userPhone = isOwner ? String(phoneNumber || '').replace(/\D/g, '') : senderPhone;
         const action = (args[0] || '').toLowerCase();
         const current = database.getMentionReact(phoneNumber, userPhone);
 
