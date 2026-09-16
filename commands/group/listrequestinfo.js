@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolvePhoneJid } = require('../../utils/jidTools');
+
 // WhatsApp country calling-code metadata for readable request summaries.
 // Longest-prefix matching is used so NANP and 3-digit African/European codes
 // are resolved before the generic fallback.
@@ -146,6 +148,47 @@ function extractRequestJid(request) {
     return null;
 }
 
+function extractRequestIdentifier(request) {
+    if (typeof request === 'string') return request;
+    if (!request || typeof request !== 'object') return null;
+    // Keep the original identifier for WhatsApp approval. It may be an @lid;
+    // the real phone JID is resolved separately for country recognition.
+    for (const key of ['jid', 'id', 'participant', 'participantJid', 'requesterJid', 'userJid']) {
+        if (typeof request[key] === 'string' && request[key].trim()) return request[key].trim();
+    }
+    for (const key of CONTAINER_KEYS) {
+        if (request[key]) {
+            const found = extractRequestIdentifier(request[key]);
+            if (found) return found;
+        }
+    }
+    return null;
+}
+
+async function resolvePendingRequestJids(requests, sock, from, metadata = null) {
+    const source = Array.isArray(requests) ? requests : [];
+    const resolved = [];
+    let cursor = 0;
+    // Resolve in bounded parallelism so large request lists do not hammer the
+    // Baileys LID mapping store.
+    const worker = async () => {
+        while (cursor < source.length) {
+            const index = cursor++;
+            const request = source[index];
+            const explicit = extractRequestJid(request);
+            const identifier = extractRequestIdentifier(request);
+            let phoneJid = explicit && explicit.endsWith('@s.whatsapp.net') ? explicit : null;
+            if (!phoneJid && identifier) {
+                const result = await resolvePhoneJid(identifier, sock, from, metadata);
+                if (result.jid?.endsWith('@s.whatsapp.net')) phoneJid = result.jid;
+            }
+            resolved[index] = { request, jid: phoneJid };
+        }
+    };
+    await Promise.all(Array.from({ length: Math.min(20, source.length) }, worker));
+    return resolved.filter(Boolean);
+}
+
 function extractRequestJids(input) {
     const found = [];
     const visit = (value) => {
@@ -197,7 +240,10 @@ function formatReport(rows, total, subject, prefix = '.') {
     if (!total) {
         return `📋 *REQUEST INFO*\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n🏷️ *Group:* ${subject || 'This group'}\n📭 No pending join requests found.`;
     }
+    const knownCount = rows.reduce((sum, row) => sum + row.count, 0);
+    const unknownCount = Math.max(0, total - knownCount);
     const lines = rows.map(row => `${row.flag} *${row.prefix}* — *${row.count} req*`);
+    if (unknownCount) lines.push(`⚪ *Unknown real number* — *${unknownCount} req*`);
     return `📋 *REQUEST INFO*\n┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n🏷️ *Group:* ${subject || 'This group'}\n📊 *Total requests:* ${total}\n\n${lines.join('\n')}\n\n_Use ${prefix}linfo 234 to list requesters from Nigeria._`;
 }
 
@@ -230,13 +276,15 @@ module.exports = {
         }
         try {
             const requests = await sock.groupRequestParticipantsList(from);
-            const requestJids = extractRequestJids(requests);
-            const requestedCode = normalizeCountryCode(args[0]);
-            let subject = '';
+            let metadata = null;
             try {
-                const metadata = await sock.groupMetadata(from);
-                subject = metadata?.subject || '';
+                metadata = await sock.groupMetadata(from);
             } catch (_) {}
+            const resolvedRequests = await resolvePendingRequestJids(requests, sock, from, metadata);
+            const requestJids = resolvedRequests.map(entry => entry.jid).filter(Boolean);
+            const totalRequests = Array.isArray(requests) ? requests.length : requestJids.length;
+            const requestedCode = normalizeCountryCode(args[0]);
+            const subject = metadata?.subject || '';
             if (requestedCode) {
                 const matching = filterRequestsByCountry(requestJids, requestedCode);
                 const report = formatCountryRequests(requestJids, requestedCode, subject, prefix);
@@ -250,11 +298,11 @@ module.exports = {
                 }
                 return;
             }
-            return reply(formatReport(aggregateRequests(requestJids), requestJids.length, subject, prefix));
+            return reply(formatReport(aggregateRequests(requestJids), totalRequests, subject, prefix));
         } catch (error) {
             console.error('[listrequestinfo] failed:', error?.message || error);
             return reply('❌ I could not read this group’s pending requests. Make sure I have permission to view them, then try again.');
         }
     },
-    _private: { digitsFromJid, classifyJid, extractRequestJid, extractRequestJids, aggregateRequests, normalizeCountryCode, filterRequestsByCountry, formatReport, formatCountryRequests, COUNTRY_CODES }
+    _private: { digitsFromJid, classifyJid, extractRequestJid, extractRequestIdentifier, extractRequestJids, resolvePendingRequestJids, aggregateRequests, normalizeCountryCode, filterRequestsByCountry, formatReport, formatCountryRequests, COUNTRY_CODES }
 };

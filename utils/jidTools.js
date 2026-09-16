@@ -56,7 +56,7 @@ function resolveMentionOrReply(msg, sender, from) {
     return normalizeJid(sender) || normalizeJid(from);
 }
 
-async function resolvePhoneJid(jid, sock, from) {
+async function resolvePhoneJid(jid, sock, from, metadata = null) {
     const normalized = normalizeJid(jid);
     if (!normalized) return { jid: null, number: null, source: 'invalid' };
     if (normalized.endsWith('@s.whatsapp.net')) {
@@ -76,8 +76,8 @@ async function resolvePhoneJid(jid, sock, from) {
     // metadata often contains the matching phone JID, so resolve it there.
     try {
         if (String(from || '').endsWith('@g.us')) {
-            const metadata = await sock?.groupMetadata?.(from);
-            const match = metadata?.participants?.find((participant) => {
+            const groupInfo = metadata || await sock?.groupMetadata?.(from);
+            const match = groupInfo?.participants?.find((participant) => {
                 const ids = [participant?.id, participant?.jid, participant?.lid, participant?.phoneNumber]
                     .filter(Boolean).map(normalizeJid);
                 return ids.includes(normalized);

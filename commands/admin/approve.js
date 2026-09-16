@@ -1,6 +1,6 @@
 'use strict';
 
-const { extractRequestJid } = require('../group/listrequestinfo')._private;
+const { extractRequestJid, resolvePendingRequestJids } = require('../group/listrequestinfo')._private;
 
 /**
  * .approve all          — approve every pending join request
@@ -88,9 +88,12 @@ module.exports = {
 
         if (arg.startsWith('+')) {
             if (!countryCode) return reply('❌ Usage: *.approve +234* or another country calling code.');
-            selectedRequests = pending.filter(request => requestMatchesCountry(request, countryCode));
+            const resolvedRequests = await resolvePendingRequestJids(pending, sock, from);
+            selectedRequests = resolvedRequests
+                .filter(entry => entry.jid.split('@')[0].split(':')[0].replace(/\D/g, '').startsWith(countryCode))
+                .map(entry => entry.request);
             if (!selectedRequests.length) {
-                return reply(`📭 No pending requests with real phone numbers starting with +${countryCode}. LID-only requests were skipped.`);
+                return reply(`📭 No pending requests with resolvable real phone numbers starting with +${countryCode}.`);
             }
         } else if (arg === 'all') {
             selectedRequests = pending;
