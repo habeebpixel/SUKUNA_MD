@@ -89,6 +89,12 @@ const JID_KEYS = new Set([
     'jid', 'id', 'participant', 'participantJid', 'user', 'userJid',
     'requester', 'requesterJid', 'phone', 'phoneNumber', 'number'
 ]);
+// WhatsApp can return both an opaque participant LID and the real phone JID
+// for a pending request. These fields must win over id/jid, otherwise the LID
+// digits are incorrectly treated as an international phone number.
+const REAL_PHONE_KEYS = [
+    'phoneNumber', 'phone', 'number', 'userPhoneNumber', 'requesterPhoneNumber'
+];
 const CONTAINER_KEYS = new Set([
     'requests', 'participants', 'items', 'results', 'data', 'entries',
     'membership_approval_requests', 'membership_approval_request', 'attrs',
@@ -102,11 +108,33 @@ function looksLikeJidOrPhone(value) {
     return digits.length >= 7 && (text.includes('@') || /^\+?\d[\d\s().-]{6,}$/.test(text));
 }
 
+function isLid(value) {
+    return String(value || '').trim().toLowerCase().endsWith('@lid');
+}
+
+function normalizeRealPhone(value) {
+    if (value == null || typeof value === 'object') return null;
+    const text = String(value).trim();
+    if (!text || isLid(text)) return null;
+    const digits = text.split('@')[0].split(':')[0].replace(/\D/g, '');
+    return digits.length >= 7 ? `${digits}@s.whatsapp.net` : null;
+}
+
 function extractRequestJid(request) {
-    if (typeof request === 'string') return looksLikeJidOrPhone(request) ? request : null;
+    if (typeof request === 'string') return normalizeRealPhone(request);
     if (!request || typeof request !== 'object') return null;
+    // Always prefer explicit phone-number properties, even when `id` is an
+    // @lid. This is the authoritative real-number field from Baileys.
+    for (const key of REAL_PHONE_KEYS) {
+        const value = request[key];
+        const phone = normalizeRealPhone(value);
+        if (phone) return phone;
+    }
     for (const [key, value] of Object.entries(request)) {
-        if (JID_KEYS.has(key) && looksLikeJidOrPhone(String(value || ''))) return String(value);
+        if (JID_KEYS.has(key) && typeof value === 'string' && looksLikeJidOrPhone(value)) {
+            const phone = normalizeRealPhone(value);
+            if (phone) return phone;
+        }
     }
     // Some binary-node adapters expose the participant under attrs or a nested user object.
     for (const [key, value] of Object.entries(request)) {
@@ -230,4 +258,3 @@ module.exports = {
     },
     _private: { digitsFromJid, classifyJid, extractRequestJid, extractRequestJids, aggregateRequests, normalizeCountryCode, filterRequestsByCountry, formatReport, formatCountryRequests, COUNTRY_CODES }
 };
-
