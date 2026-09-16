@@ -1,6 +1,6 @@
 'use strict';
 
-const { extractRequestJid, resolvePendingRequestJids } = require('../group/listrequestinfo')._private;
+const { extractRequestJid, resolvePendingRequestJids, COUNTRY_CODES } = require('../group/listrequestinfo')._private;
 
 /**
  * .approve all          — approve every pending join request
@@ -30,6 +30,12 @@ async function approveInBatches(sock, from, ids, batchSize = 50) {
 
 function normalizeCountryCode(value) {
     return String(value || '').replace(/\D/g, '');
+}
+
+function isCountryArgument(value) {
+    const raw = String(value || '').trim();
+    const code = normalizeCountryCode(raw);
+    return Boolean(code) && (raw.startsWith('+') || (code.length === 3 && COUNTRY_CODES.some(([known]) => known === code)));
 }
 
 function requestPhoneJid(request) {
@@ -84,9 +90,9 @@ module.exports = {
 
         const arg = String(args[0]).toLowerCase();
         let selectedRequests;
-        const countryCode = arg.startsWith('+') ? normalizeCountryCode(arg) : '';
+        const countryCode = isCountryArgument(arg) ? normalizeCountryCode(arg) : '';
 
-        if (arg.startsWith('+')) {
+        if (countryCode) {
             if (!countryCode) return reply('❌ Usage: *.approve +234* or another country calling code.');
             const resolvedRequests = await resolvePendingRequestJids(pending, sock, from);
             selectedRequests = resolvedRequests
@@ -119,5 +125,5 @@ module.exports = {
         }
         await reply(summary);
     },
-    _private: { normalizeCountryCode, requestPhoneJid, requestMatchesCountry, requestApprovalJid }
+    _private: { normalizeCountryCode, isCountryArgument, requestPhoneJid, requestMatchesCountry, requestApprovalJid }
 };
