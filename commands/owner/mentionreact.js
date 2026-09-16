@@ -24,7 +24,11 @@ module.exports = {
         // is the authoritative identity for the linked owner; storing the LID
         // here makes the runtime lookup (which uses the real owner number) miss.
         const senderPhone = String(sender || '').split('@')[0].split(':')[0].replace(/\D/g, '');
-        const userPhone = isOwner ? String(phoneNumber || '').replace(/\D/g, '') : senderPhone;
+        // The dispatcher exposes owner-level permission to mods too, so use
+        // isMod separately: only the actual primary owner uses phoneNumber.
+        const userPhone = isMod
+            ? senderPhone
+            : String(phoneNumber || '').replace(/\D/g, '');
         const action = (args[0] || '').toLowerCase();
         const current = database.getMentionReact(phoneNumber, userPhone);
 
