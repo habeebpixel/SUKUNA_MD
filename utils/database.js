@@ -529,6 +529,21 @@ class Database {
         this.save('users');
     }
 
+    getAutoStatusReaction(phoneNumber) {
+        if (!this.data.users[phoneNumber]) this.data.users[phoneNumber] = {};
+        return {
+            enabled: !!this.data.users[phoneNumber].autoViewStatus,
+            emoji: this.data.users[phoneNumber].autoStatusEmoji || '❤️',
+        };
+    }
+
+    setAutoStatusReaction(phoneNumber, { enabled, emoji } = {}) {
+        if (!this.data.users[phoneNumber]) this.data.users[phoneNumber] = {};
+        this.data.users[phoneNumber].autoViewStatus = !!enabled;
+        if (emoji) this.data.users[phoneNumber].autoStatusEmoji = String(emoji);
+        this.save('users');
+    }
+
     // ── Auto-save status to bot owner's DM (per-bot toggle) ────────────────
     getAutoSaveStatus(phoneNumber) {
         if (!this.data.users[phoneNumber]) this.data.users[phoneNumber] = {};

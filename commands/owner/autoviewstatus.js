@@ -1,45 +1,67 @@
 /**
- * AutoViewStatus — Toggle automatic status view + auto-like (❤️).
+ * AutoStatus — automatic status viewing and custom reactions.
  *
- * When ON, the bot automatically views and reacts to every contact's
- * status the moment it's posted.
- *
- *   .autoviewstatus       — toggle on/off
- *   .autoviewstatus on    — enable
- *   .autoviewstatus off   — disable
- *
- * Owner only.
+ * Usage:
+ *   .autostatus on
+ *   .autostatus off
+ *   .autostatus set ❌😔✌️☕😎😊🥺
+ *   .autostatus status
  */
 'use strict';
 
+function validEmojiSequence(value) {
+    const emoji = String(value || '').trim();
+    if (!emoji || /\s/.test(emoji) || [...emoji].length > 24) return false;
+    return /\p{Extended_Pictographic}/u.test(emoji);
+}
+
 module.exports = {
-    name:        'autoviewstatus',
-    aliases:     ['autostatus', 'avs', 'autoview'],
-    description: 'Auto-view and auto-like every incoming status',
-    usage:       '.autoviewstatus [on|off]',
-    category:    'owner',
+    name: 'autoviewstatus',
+    aliases: ['autostatus', 'avs', 'autoview'],
+    description: 'Automatically view statuses and react with custom emojis',
+    usage: '.autostatus on|off|set <emoji>|status',
+    category: 'owner',
 
     async execute({ args, reply, database, phoneNumber, isOwner }) {
         if (!isOwner) return reply('🔒 *This command is for the bot owner only.*');
 
-        const current = database.getAutoViewStatus(phoneNumber);
-        const arg = (args[0] || '').toLowerCase();
+        const setting = database.getAutoStatusReaction(phoneNumber);
+        const action = (args[0] || '').toLowerCase();
 
-        let next;
-        if (arg === 'on' || arg === 'enable' || arg === 'true')   next = true;
-        else if (arg === 'off' || arg === 'disable' || arg === 'false') next = false;
-        else next = !current;
+        if (action === 'status' || !action) {
+            return reply(
+                `╔════════════════════════════════╗\n` +
+                `║       👁️  *AUTO STATUS*         ║\n` +
+                `╚════════════════════════════════╝\n\n` +
+                `Status: *${setting.enabled ? '✅ ON' : '❌ OFF'}*\n` +
+                `Reaction: ${setting.emoji}\n\n` +
+                `*Commands:*\n` +
+                `▸ .autostatus on\n` +
+                `▸ .autostatus off\n` +
+                `▸ .autostatus set ❌😔✌️☕😎😊🥺\n` +
+                `▸ .autostatus status`
+            );
+        }
 
-        database.setAutoViewStatus(phoneNumber, next);
+        if (action === 'on' || action === 'enable') {
+            database.setAutoStatusReaction(phoneNumber, { enabled: true, emoji: setting.emoji });
+            return reply(`✅ *AutoStatus ON*\n\nEvery incoming status will be viewed and reacted to with ${setting.emoji}.`);
+        }
 
-        return reply(
-            `╔══════════════════════════════╗\n` +
-            `║   👁️  *AUTO-VIEW STATUS*       ║\n` +
-            `╚══════════════════════════════╝\n\n` +
-            `Status: *${next ? '✅ ENABLED' : '❌ DISABLED'}*\n\n` +
-            (next
-                ? `_The bot will now automatically view and ❤️ every status as soon as it's posted._`
-                : `_Auto-view and auto-like are off._`)
-        );
-    }
+        if (action === 'off' || action === 'disable') {
+            database.setAutoStatusReaction(phoneNumber, { enabled: false, emoji: setting.emoji });
+            return reply('❌ *AutoStatus OFF*\n\nAutomatic status viewing and reactions are disabled.');
+        }
+
+        if (action === 'set') {
+            const emoji = args.slice(1).join('');
+            if (!validEmojiSequence(emoji)) {
+                return reply('❌ Provide emoji only, up to 24 symbols.\n\nExample: `.autostatus set ❌😔✌️☕😎😊🥺☕`');
+            }
+            database.setAutoStatusReaction(phoneNumber, { enabled: true, emoji });
+            return reply(`✅ *AutoStatus reaction updated to ${emoji}*\n\nAutoStatus is now ON.`);
+        }
+
+        return reply('⚠️ Use `.autostatus on`, `.autostatus off`, `.autostatus set <emoji>`, or `.autostatus status`.');
+    },
 };
