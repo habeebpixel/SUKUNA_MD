@@ -4,7 +4,6 @@
  * Usage:
  *   Reply to any message + .banchecker
  *   .banchecker <number>        (e.g. .banchecker 2349127814853)
- *   .banchecker 2 <number>      (plain-text result for iPhone users)
  *
  * Uses the Baron Ban Checker API as the sole verdict source.
  * Users can edit BARON_API_KEY below before deploying, or provide
@@ -125,18 +124,14 @@ function renderBanGenAI({ target, country, result, extras, registered, devices, 
 // ── Command ──────────────────────────────────────────────────────────
 module.exports = {
     name: 'banchecker',
-    aliases: ['bancheck', 'checkban', 'isbanned', 'numbercheck'],
+    aliases: ['checkban', 'isbanned', 'numbercheck'],
     description: 'Accurately check if a WhatsApp number is banned or active',
-    usage: '.banchecker <number> | .banchecker 2 <number> | reply + .banchecker',
+    usage: '.banchecker <number> or reply + .banchecker',
     category: 'utility',
     async execute({ sock, msg, from, reply, args, isOwner }) {
         if (!isOwner) return reply('❌ *Owner only!*');
 
-        // Mode 2 is deliberately text-only for clients that cannot display
-        // the GenAI rich response. It uses the same Baron API and verdict as
-        // the default mode; only the presentation changes.
-        const textMode = String(args[0] || '').trim() === '2';
-        const numberArgs = textMode ? args.slice(1) : args;
+        const numberArgs = args;
 
         let target = null;
         try {
@@ -159,7 +154,6 @@ module.exports = {
                 `*Usage:*\n` +
                 `▸ Reply to a user + *.banchecker*\n` +
                 `▸ .banchecker <number>\n` +
-                `▸ .banchecker 2 <number>  (plain text)\n\n` +
                 `*Example:* .banchecker 2349127814853`
             );
         }
@@ -180,17 +174,6 @@ module.exports = {
                 profile: null,
                 source: 'BARON',
             };
-            if (textMode) {
-                const statusLine = isBanned ? '🔴 BANNED' : '🟢 UNBANNED — ACTIVE';
-                const reason = baron.reason ? `\nReason: ${String(baron.reason)}` : '';
-                return reply(
-                    `🛡️ WHATSAPP BAN CHECK\n\n` +
-                    `Number: +${target}\n` +
-                    `Country: ${getCountry(target)}\n` +
-                    `Status: ${statusLine}\n` +
-                    `Source: Baron Ban Checker API${reason}`
-                );
-            }
             return await sendRichHtml({
                 sock,
                 jid: from,
@@ -209,5 +192,11 @@ module.exports = {
             console.error('[banchecker] Baron API failed:', error.message);
             return reply(`❌ Baron ban check failed: ${error.message}\nTry again or verify the API key.`);
         }
-    }
+    },
+
+    // Shared by the plain-text .bancheck command so both commands use the
+    // exact same endpoint, authentication, and response validation.
+    checkWithBaron,
+    normalizeNumber,
+    getCountry,
 };
