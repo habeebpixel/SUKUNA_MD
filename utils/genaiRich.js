@@ -2,6 +2,7 @@
 
 const crypto = require('crypto');
 const { generateWAMessageFromContent, proto } = require('@pasqua-baileys/baileys');
+const sharp = require('sharp');
 
 function escapeHtml(value) {
     return String(value ?? '').replace(/[&<>"']/g, char => ({
@@ -93,9 +94,48 @@ function htmlToPlainText(html) {
         .trim();
 }
 
+function escapeXml(value) {
+    return String(value || '').replace(/[&<>"']/g, char => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&apos;',
+    }[char]));
+}
+
+async function sendCanvasFallback({ sock, jid, quoted, html }) {
+    const text = htmlToPlainText(html) || 'SUKUNA MD';
+    const lines = [];
+    for (const paragraph of text.split(/\n+/)) {
+        let line = '';
+        for (const word of paragraph.split(/\s+/)) {
+            if ((line + ' ' + word).trim().length > 52) {
+                if (line) lines.push(line);
+                line = word;
+            } else line = (line + ' ' + word).trim();
+        }
+        if (line) lines.push(line);
+    }
+    const lineHeight = 31;
+    const height = Math.max(240, 126 + lines.length * lineHeight);
+    const textSvg = lines.map((line, index) =>
+        `<text x="54" y="${132 + index * lineHeight}" class="body">${escapeXml(line)}</text>`
+    ).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="${height}">
+      <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#250b35"/><stop offset=".52" stop-color="#43123f"/><stop offset="1" stop-color="#12091d"/></linearGradient></defs>
+      <rect width="100%" height="100%" rx="34" fill="url(#bg)"/>
+      <rect x="18" y="18" width="864" height="${height - 36}" rx="27" fill="none" stroke="#ee4fa3" stroke-width="4"/>
+      <circle cx="72" cy="67" r="18" fill="#ff4da6"/><circle cx="828" cy="67" r="18" fill="#9b5cff"/>
+      <text x="450" y="77" text-anchor="middle" class="title">SUKUNA MD · IPHONE MODE</text>
+      <path d="M54 101H846" stroke="#d83c91" stroke-width="2"/>
+      ${textSvg}
+      <text x="450" y="${height - 30}" text-anchor="middle" class="footer">COLOURED CANVAS FALLBACK</text>
+      <style>.title{font:700 27px Arial,sans-serif;fill:#ffd9ed;letter-spacing:2px}.body{font:500 22px monospace;fill:#ffeaf5}.footer{font:500 15px monospace;fill:#d59bc3;letter-spacing:2px}</style>
+    </svg>`;
+    const image = await sharp(Buffer.from(svg)).png().toBuffer();
+    return sock.sendMessage(jid, { image, caption: 'SUKUNA MD · iPhone mode' }, { quoted });
+}
+
 async function sendRichHtml({ sock, jid, quoted, html }) {
     if (sock?.__sukunaDeviceMode === 'iphone') {
-        return sock.sendMessage(jid, { text: htmlToPlainText(html) }, { quoted });
+        return sendCanvasFallback({ sock, jid, quoted, html });
     }
     const content = buildRichContent(html, quoted);
     const safeQuoted = quoted?.message ? quoted : undefined;
@@ -128,4 +168,4 @@ function createEconomyGenAISock(sock, { title = 'ECONOMY' } = {}) {
     });
 }
 
-module.exports = { escapeHtml, buildRichContent, htmlToPlainText, sendRichHtml, sendRichText, createEconomyGenAISock };
+module.exports = { escapeHtml, buildRichContent, htmlToPlainText, sendCanvasFallback, sendRichHtml, sendRichText, createEconomyGenAISock };
