@@ -101,7 +101,7 @@ function escapeXml(value) {
     }[char]));
 }
 
-async function sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, caption, theme = 'default' }) {
+async function sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, caption, theme = 'default', mentions = [] }) {
     const text = canvasText || htmlToPlainText(html) || 'SUKUNA MD';
     const lines = [];
     for (const paragraph of text.split(/\n+/)) {
@@ -138,16 +138,16 @@ async function sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, 
       <style>.title{font:700 27px Arial,sans-serif;fill:#ffd9ed;letter-spacing:2px}.body{font:700 22px monospace;fill:#ffeaf5}.footer{font:500 15px monospace;fill:#d59bc3;letter-spacing:2px}</style>
     </svg>`;
     const image = await sharp(Buffer.from(svg)).png().toBuffer();
-    return sock.sendMessage(jid, { image, caption: caption || 'SUKUNA MD · iPhone mode' }, { quoted });
+    return sock.sendMessage(jid, { image, caption: caption || 'SUKUNA MD · iPhone mode', ...(mentions.length ? { mentions } : {}) }, { quoted });
 }
 
-async function sendRichHtml({ sock, jid, quoted, html, canvasText, title, caption, theme }) {
+async function sendRichHtml({ sock, jid, quoted, html, canvasText, title, caption, theme, mentions = [] }) {
     // Read the persisted deployment setting as a second source of truth. This
     // covers button/interactive dispatch paths that do not rebuild the normal
     // command context before calling a GenAI renderer.
     const deviceMode = sock?.__sukunaDeviceMode || database.getDeviceMode();
     if (deviceMode === 'iphone') {
-        return sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, caption, theme });
+        return sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, caption, theme, mentions });
     }
     const content = buildRichContent(html, quoted);
     const safeQuoted = quoted?.message ? quoted : undefined;

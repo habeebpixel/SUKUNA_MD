@@ -1,25 +1,116 @@
 'use strict';
 
-const { sendRichHtml } = require('../../utils/genaiRich');
+const { sendRichHtml, sendCanvasFallback, escapeHtml } = require('../../utils/genaiRich');
+const database = require('../../utils/database');
 
-function tttHtml() {
-    return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}html,body{margin:0;background:transparent;font-family:Arial,sans-serif}body{padding:6px;background:radial-gradient(circle at 50% 4%,#143f5b,#07121f 74%)}.card{padding:13px;border:2px solid #4ec9ff;border-radius:20px;background:linear-gradient(145deg,#081d32,#123b53 52%,#071322);color:#d9f3ff;box-shadow:inset 0 0 0 3px #103958,0 8px 20px #000b}.title{text-align:center;color:#a9eaff;font:bold 23px Arial Black,Arial,sans-serif;letter-spacing:1px;text-shadow:0 0 11px #27c6ff}.sub{text-align:center;margin:2px 0 9px;color:#82bbd2;font:11px monospace}.score{display:flex;gap:6px;margin-bottom:8px}.score div{flex:1;padding:5px;border:1px solid #28678a;border-radius:8px;background:#061522;text-align:center;color:#74acc4;font:bold 9px monospace}.score b{display:block;margin-top:2px;color:#fff;font-size:16px}.board{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;padding:9px;border:2px solid #287eaa;border-radius:14px;background:#061622;box-shadow:inset 0 0 24px #000}.cell{height:72px;border:2px solid #1d6080;border-radius:11px;background:linear-gradient(145deg,#0b2636,#102e40);color:#f4fbff;font:bold 42px Arial;text-shadow:0 0 12px #43d6ff}.cell:active{transform:scale(.94)}.cell.x{color:#ff91cf;text-shadow:0 0 13px #ff2d9c}.cell.o{color:#72e9ff;text-shadow:0 0 13px #28ceff}.message{height:34px;margin:8px 0;display:grid;place-items:center;border:1px solid #2a7699;border-radius:8px;background:#06131f;color:#c9f4ff;font:bold 12px monospace}.buttons{display:grid;grid-template-columns:1fr 1fr;gap:7px}.buttons button{height:40px;border:2px solid #1d6e91;border-radius:11px;color:#e8fbff;background:linear-gradient(#185a79,#0b2d45);font-weight:900}.buttons button:active{transform:scale(.95)}#new{grid-column:1/-1;background:linear-gradient(#258ab3,#13506f)}.hint{text-align:center;margin:7px 0 0;color:#75a9bb;font:10px monospace}
-</style></head><body><div class="card"><div class="title">❌ TIC-TAC-TOE ⭕</div><div class="sub">CHALLENGE THE CURSED AI · GET THREE IN A ROW</div><div class="score"><div>YOU<b id="you">0</b></div><div>DRAW<b id="draw">0</b></div><div>AI<b id="ai">0</b></div></div><div class="board" id="board"></div><div class="message" id="message">Your move — choose a square</div><div class="buttons"><button id="new">NEW ROUND</button><button id="mode">MODE: VS AI</button><button id="reset">RESET SCORE</button></div><div class="hint">Tap a square to place ❌ · the AI answers with ⭕</div></div><script>(function(){var board=document.getElementById('board'),msg=document.getElementById('message'),youEl=document.getElementById('you'),drawEl=document.getElementById('draw'),aiEl=document.getElementById('ai'),cells=Array(9).fill(''),turn='X',over=false,vsAI=true,scores={X:0,O:0,D:0},wins=[[0,1,2],[3,4,5],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];function draw(){board.innerHTML='';cells.forEach(function(v,i){var b=document.createElement('button');b.className='cell '+(v==='X'?'x':v==='O'?'o':'');b.textContent=v==='X'?'✕':v==='O'?'◯':'';b.onclick=function(){play(i)};board.appendChild(b)})}function result(){for(var i=0;i<wins.length;i++){var w=wins[i],a=cells[w[0]];if(a&&a===cells[w[1]]&&a===cells[w[2]])return a}return cells.every(Boolean)?'D':null}function finish(r){over=true;if(r==='X'){scores.X++;msg.textContent='YOU WIN — cursed technique mastered'}else if(r==='O'){scores.O++;msg.textContent='AI WINS — rematch the curse'}else{scores.D++;msg.textContent='DRAW — neither side breaks through'}youEl.textContent=scores.X;aiEl.textContent=scores.O;drawEl.textContent=scores.D;draw()}function aiMove(){if(over)return;var empty=cells.map(function(v,i){return v?null:i}).filter(function(v){return v!==null}),pick;if(empty.includes(4))pick=4;else{var best=-1;empty.forEach(function(i){cells[i]='O';var r=result(),value=r==='O'?10:r==='D'?0:1;cells[i]='';if(value>best){best=value;pick=i}})}cells[pick]='O';var r=result();if(r)finish(r);else{turn='X';msg.textContent='Your move — choose a square';draw()}}function play(i){if(over||cells[i]||turn!=='X')return;cells[i]='X';var r=result();if(r)return finish(r);if(vsAI){turn='O';msg.textContent='AI is thinking...';draw();setTimeout(aiMove,380)}else{turn='O';msg.textContent='⭕ turn — tap a square';draw()}}function newRound(){cells=Array(9).fill('');turn='X';over=false;msg.textContent='Your move — choose a square';draw()}document.getElementById('new').onclick=newRound;document.getElementById('mode').onclick=function(){vsAI=!vsAI;this.textContent='MODE: '+(vsAI?'VS AI':'2 PLAYER');newRound()};document.getElementById('reset').onclick=function(){scores={X:0,O:0,D:0};youEl.textContent='0';aiEl.textContent='0';drawEl.textContent='0';newRound()};draw()})();</script></body></html>`;
+const games = new Map();
+const wins = [[0,1,2],[3,4,5],[6,7,8],[0,3,6],[1,4,7],[2,5,8],[0,4,8],[2,4,6]];
+
+function playerId(jid) { return String(jid || '').split(':')[0]; }
+function label(jid) { return playerId(jid).split('@')[0]; }
+function mode(sock) { return sock?.__sukunaDeviceMode || database.getDeviceMode(); }
+function gameFor(chat) {
+    if (!games.has(chat)) games.set(chat, { players: [], board: Array(9).fill(''), turn: 0, over: false, result: '' });
+    return games.get(chat);
+}
+function result(game) {
+    for (const [a, b, c] of wins) if (game.board[a] && game.board[a] === game.board[b] && game.board[a] === game.board[c]) return game.board[a];
+    return game.board.every(Boolean) ? 'D' : null;
+}
+function boardText(game) {
+    return [0, 1, 2].map(row => [0, 1, 2].map(col => game.board[row * 3 + col] || String(row * 3 + col + 1)).join(' │ ')).join('\n───┼───┼───\n');
+}
+function report(game, chat, message) {
+    const first = game.players[0] ? `X: @${label(game.players[0])}` : 'X: waiting';
+    const second = game.players[1] ? `O: @${label(game.players[1])}` : 'O: waiting';
+    const next = game.players[game.turn];
+    const nextText = next ? `Next turn: @${label(next)} (${game.turn === 0 ? 'X' : 'O'})` : 'Next turn: waiting for player O';
+    return {
+        canvasText: `☠ SUKUNA TTT ☠\n\n${first}\n${second}\n\n${boardText(game)}\n\n${message || nextText}`,
+        caption: `☠ SUKUNA TIC-TAC-TOE\n\n${first}\n${second}\n\n${message || nextText}\n\nUse .ttt 1–9 to choose a square.`,
+        next,
+    };
+}
+async function sendBoard({ sock, msg, from, game, message }) {
+    const view = report(game, from, message);
+    const mentions = view.next ? [view.next] : game.players.slice(0, 2);
+    const html = `<div><h1>☠ SUKUNA TIC-TAC-TOE</h1><p>${escapeHtml(boardText(game)).replace(/\n/g, '<br>')}</p><p>${escapeHtml(view.caption).replace(/\n/g, '<br>')}</p></div>`;
+    if (mode(sock) === 'iphone') {
+        return sendCanvasFallback({
+            sock, jid: from, quoted: msg, html,
+            canvasText: view.canvasText,
+            title: '☠ SUKUNA TTT ☠',
+            caption: view.caption,
+            theme: 'sukuna',
+            mentions,
+        });
+    }
+    const sent = await sendRichHtml({ sock, jid: from, quoted: msg, html, mentions });
+    if (view.next) {
+        await sock.sendMessage(from, {
+            text: `⏳ @${label(view.next)}, your turn — use .ttt 1–9.`,
+            mentions: [view.next],
+        }, { quoted: msg });
+    }
+    return sent;
+}
+
+async function join({ sock, msg, from, sender, reply }) {
+    const game = gameFor(from);
+    const id = playerId(sender);
+    if (!id) return reply('❌ I could not identify the player.');
+    if (game.over) {
+        games.set(from, { players: [], board: Array(9).fill(''), turn: 0, over: false, result: '' });
+        return join({ sock, msg, from, sender, reply });
+    }
+    if (!game.players.some(item => playerId(item) === id)) {
+        if (game.players.length >= 2) return reply('⚔️ This arena already has two players. Wait for the next round.');
+        game.players.push(sender);
+    }
+    const message = game.players.length < 2
+        ? `@${label(sender)} joined as X. A second player should send .join.`
+        : `⚔️ Arena ready. @${label(game.players[0])} is X and @${label(game.players[1])} is O. @${label(game.players[game.turn])} starts with .ttt 1–9.`;
+    return sendBoard({ sock, msg, from, game, message });
+}
+
+async function move({ sock, msg, from, sender, reply, value }) {
+    const game = gameFor(from);
+    if (game.players.length < 2) return reply('⚔️ Two players are needed. Send .join to enter the arena.');
+    const id = playerId(sender);
+    const turnPlayer = game.players[game.turn];
+    if (playerId(turnPlayer) !== id) return reply(`⏳ It is @${label(turnPlayer)}'s turn.`, { mentions: [turnPlayer] });
+    const index = Number(value) - 1;
+    if (!Number.isInteger(index) || index < 0 || index > 8) return reply('Use a square number from 1 to 9.');
+    if (game.board[index]) return reply('That square is already claimed. Choose another number.');
+    game.board[index] = game.turn === 0 ? 'X' : 'O';
+    const winner = result(game);
+    if (winner) {
+        game.over = true;
+        game.result = winner === 'D' ? 'DRAW — the domains collide evenly.' : `🏆 @${label(sender)} wins the Sukuna domain!`;
+        return sendBoard({ sock, msg, from, game, message: game.result + ' Send .join to start a new round.' });
+    }
+    game.turn = game.turn === 0 ? 1 : 0;
+    return sendBoard({ sock, msg, from, game, message: `Move accepted: @${label(sender)} chose ${value}. @${label(game.players[game.turn])}, your turn — use .ttt 1–9.` });
 }
 
 module.exports = {
     name: 'ttt',
     aliases: ['tictactoe', 'xo'],
-    description: 'Play interactive Tic-Tac-Toe in WhatsApp GenAI',
-    usage: '.ttt',
+    description: 'Play Sukuna Tic-Tac-Toe with .join and numbered moves',
+    usage: '.ttt | .join | .ttt 1-9',
     category: 'games',
-    async execute({ sock, msg, from, reply }) {
+    join,
+    async execute({ sock, msg, from, sender, reply, args }) {
         try {
-            await sendRichHtml({ sock, jid: from, quoted: msg, html: tttHtml() });
+            if (!args.length) {
+                const game = gameFor(from);
+                return sendBoard({ sock, msg, from, game, message: game.players.length ? undefined : 'Send .join to enter as player X. A second player sends .join.' });
+            }
+            if (String(args[0]).toLowerCase() === 'join') return join({ sock, msg, from, sender, reply });
+            return move({ sock, msg, from, sender, reply, value: args[0] });
         } catch (error) {
-            console.error('[TTT GenAI]', error.message);
-            await reply('Tic-Tac-Toe could not open on this client. Please update WhatsApp or run `.ttt` again.');
+            console.error('[TTT]', error.message);
+            return reply('Tic-Tac-Toe could not open. Run `.ttt` again.');
         }
     },
 };
