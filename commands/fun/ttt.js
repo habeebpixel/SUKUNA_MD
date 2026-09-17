@@ -1,6 +1,6 @@
 'use strict';
 
-const { sendRichHtml, sendCanvasFallback, escapeHtml } = require('../../utils/genaiRich');
+const { sendRichHtml, sendSukunaTTTCanvas, escapeHtml } = require('../../utils/genaiRich');
 const database = require('../../utils/database');
 
 const games = new Map();
@@ -36,14 +36,7 @@ async function sendBoard({ sock, msg, from, game, message }) {
     const mentions = view.next ? [view.next] : game.players.slice(0, 2);
     const html = `<div><h1>☠ SUKUNA TIC-TAC-TOE</h1><p>${escapeHtml(boardText(game)).replace(/\n/g, '<br>')}</p><p>${escapeHtml(view.caption).replace(/\n/g, '<br>')}</p></div>`;
     if (mode(sock) === 'iphone') {
-        return sendCanvasFallback({
-            sock, jid: from, quoted: msg, html,
-            canvasText: view.canvasText,
-            title: '☠ SUKUNA TTT ☠',
-            caption: view.caption,
-            theme: 'sukuna',
-            mentions,
-        });
+        return sendSukunaTTTCanvas({ sock, jid: from, quoted: msg, board: game.board, players: game.players, status: message || 'SEND .TTT 1–9 TO PLAY', mentions });
     }
     const sent = await sendRichHtml({ sock, jid: from, quoted: msg, html, mentions });
     if (view.next) {

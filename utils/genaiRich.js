@@ -141,6 +141,44 @@ async function sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, 
     return sock.sendMessage(jid, { image, caption: caption || 'SUKUNA MD · iPhone mode', ...(mentions.length ? { mentions } : {}) }, { quoted });
 }
 
+async function sendSukunaTTTCanvas({ sock, jid, quoted, board, players = [], status = '', mentions = [] }) {
+    const cells = Array.isArray(board) ? board : Array(9).fill('');
+    const cellSize = 310;
+    const boardX = 175;
+    const boardY = 245;
+    const boardSize = cellSize * 3;
+    const marks = cells.map((mark, index) => {
+        if (!mark) return '';
+        const x = boardX + (index % 3) * cellSize + cellSize / 2;
+        const y = boardY + Math.floor(index / 3) * cellSize + 218;
+        const color = mark === 'X' ? '#ff4778' : '#ffb0c5';
+        return `<text x="${x}" y="${y}" text-anchor="middle" class="mark" fill="${color}">${mark}</text>`;
+    }).join('');
+    const playerLine = players.length >= 2
+        ? `X  @${labelForCanvas(players[0])}        O  @${labelForCanvas(players[1])}`
+        : 'WAITING FOR TWO PLAYERS · SEND .JOIN';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="1450">
+      <defs><linearGradient id="arena" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#050204"/><stop offset=".5" stop-color="#5c0916"/><stop offset="1" stop-color="#180309"/></linearGradient><filter id="glow"><feGaussianBlur stdDeviation="8" result="blur"/><feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs>
+      <rect width="1600" height="1450" rx="48" fill="url(#arena)"/>
+      <rect x="28" y="28" width="1544" height="1394" rx="40" fill="none" stroke="#ff3158" stroke-width="7"/>
+      <text x="800" y="110" text-anchor="middle" class="title">☠ SUKUNA TTT ☠</text>
+      <text x="800" y="172" text-anchor="middle" class="players">${escapeXml(playerLine)}</text>
+      <path d="M120 205H1480" stroke="#ff3158" stroke-width="4"/>
+      <rect x="${boardX - 18}" y="${boardY - 18}" width="${boardSize + 36}" height="${boardSize + 36}" rx="28" fill="#100207" stroke="#ff3158" stroke-width="6" filter="url(#glow)"/>
+      <path d="M${boardX + cellSize} ${boardY}V${boardY + boardSize} M${boardX + cellSize * 2} ${boardY}V${boardY + boardSize} M${boardX} ${boardY + cellSize}H${boardX + boardSize} M${boardX} ${boardY + cellSize * 2}H${boardX + boardSize}" stroke="#ff6686" stroke-width="10" stroke-linecap="round"/>
+      ${marks}
+      <text x="800" y="${boardY + boardSize + 115}" text-anchor="middle" class="status">${escapeXml(status || 'SEND .TTT 1–9 TO PLAY')}</text>
+      <text x="800" y="${boardY + boardSize + 175}" text-anchor="middle" class="hint">SUKUNA DOMAIN · CHOOSE A SQUARE</text>
+      <style>.title{font:900 64px Arial,sans-serif;fill:#fff2f6;letter-spacing:8px}.players{font:700 30px monospace;fill:#ffc6d4;letter-spacing:2px}.mark{font:900 210px Arial,sans-serif;paint-order:stroke;stroke:#25030b;stroke-width:8}.status{font:800 38px monospace;fill:#fff0f4}.hint{font:600 22px monospace;fill:#f094ab;letter-spacing:4px}</style>
+    </svg>`;
+    const image = await sharp(Buffer.from(svg)).png().toBuffer();
+    return sock.sendMessage(jid, { image, caption: status || 'SUKUNA TTT', ...(mentions.length ? { mentions } : {}) }, { quoted });
+}
+
+function labelForCanvas(jid) {
+    return String(jid || '').split(':')[0].split('@')[0];
+}
+
 async function sendRichHtml({ sock, jid, quoted, html, canvasText, title, caption, theme, mentions = [] }) {
     // Read the persisted deployment setting as a second source of truth. This
     // covers button/interactive dispatch paths that do not rebuild the normal
@@ -180,4 +218,4 @@ function createEconomyGenAISock(sock, { title = 'ECONOMY' } = {}) {
     });
 }
 
-module.exports = { escapeHtml, buildRichContent, htmlToPlainText, sendCanvasFallback, sendRichHtml, sendRichText, createEconomyGenAISock };
+module.exports = { escapeHtml, buildRichContent, htmlToPlainText, sendCanvasFallback, sendSukunaTTTCanvas, sendRichHtml, sendRichText, createEconomyGenAISock };
