@@ -114,28 +114,28 @@ async function sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, 
         }
         if (line) lines.push(line);
     }
-    const lineHeight = 31;
-    const height = Math.max(240, 126 + lines.length * lineHeight);
+    const lineHeight = 44;
+    const height = Math.max(360, 154 + lines.length * lineHeight);
     const textSvg = lines.map((line, index) =>
-        `<text x="54" y="${132 + index * lineHeight}" class="body">${escapeXml(line)}</text>`
+        `<text x="74" y="${154 + index * lineHeight}" class="body">${escapeXml(line)}</text>`
     ).join('');
     const sukuna = theme === 'sukuna';
-    const bgStart = sukuna ? '#090305' : '#250b35';
-    const bgMid = sukuna ? '#3b0712' : '#43123f';
-    const bgEnd = sukuna ? '#120408' : '#12091d';
+    const bgStart = sukuna ? '#050204' : '#250b35';
+    const bgMid = sukuna ? '#580914' : '#43123f';
+    const bgEnd = sukuna ? '#1a0308' : '#12091d';
     const accent = sukuna ? '#ff3158' : '#ee4fa3';
     const titleText = title || (sukuna ? '☠ SUKUNA BAN CHECKER ☠' : 'SUKUNA MD · IPHONE MODE');
     const footerText = sukuna ? 'BARON API · CURSED VERIFICATION' : 'COLOURED CANVAS FALLBACK';
-    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="${height}">
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="${height}">
       <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${bgStart}"/><stop offset=".52" stop-color="${bgMid}"/><stop offset="1" stop-color="${bgEnd}"/></linearGradient></defs>
       <rect width="100%" height="100%" rx="34" fill="url(#bg)"/>
-      <rect x="18" y="18" width="864" height="${height - 36}" rx="27" fill="none" stroke="${accent}" stroke-width="4"/>
-      <circle cx="72" cy="67" r="18" fill="${accent}"/><circle cx="828" cy="67" r="18" fill="#8d1835"/>
-      <text x="450" y="77" text-anchor="middle" class="title">${escapeXml(titleText)}</text>
-      <path d="M54 101H846" stroke="${accent}" stroke-width="2"/>
+      <rect x="24" y="24" width="1152" height="${height - 48}" rx="34" fill="none" stroke="${accent}" stroke-width="5"/>
+      <circle cx="96" cy="76" r="23" fill="${accent}"/><circle cx="1104" cy="76" r="23" fill="#8d1835"/>
+      <text x="600" y="88" text-anchor="middle" class="title">${escapeXml(titleText)}</text>
+      <path d="M74 116H1126" stroke="${accent}" stroke-width="3"/>
       ${textSvg}
-      <text x="450" y="${height - 30}" text-anchor="middle" class="footer">${footerText}</text>
-      <style>.title{font:700 27px Arial,sans-serif;fill:#ffd9ed;letter-spacing:2px}.body{font:700 22px monospace;fill:#ffeaf5}.footer{font:500 15px monospace;fill:#d59bc3;letter-spacing:2px}</style>
+      <text x="600" y="${height - 38}" text-anchor="middle" class="footer">${footerText}</text>
+      <style>.title{font:700 35px Arial,sans-serif;fill:#fff0f7;letter-spacing:3px}.body{font:700 29px monospace;fill:#fff5fa}.footer{font:600 18px monospace;fill:#f0a8c5;letter-spacing:3px}</style>
     </svg>`;
     const image = await sharp(Buffer.from(svg)).png().toBuffer();
     return sock.sendMessage(jid, { image, caption: caption || 'SUKUNA MD · iPhone mode', ...(mentions.length ? { mentions } : {}) }, { quoted });
