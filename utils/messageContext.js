@@ -62,16 +62,16 @@ function buildQuoted(message, key, from, sock, cache, seen = new Set()) {
     };
     const nestedInfo = contextInfo(message);
     const nestedId = nestedInfo?.stanzaId;
-    if (nestedInfo?.quotedMessage && nestedId && !seen.has(nestedId)) {
+    const storedNested = nestedId ? cache?.get(from)?.get(nestedId) : null;
+    if (storedNested && !seen.has(nestedId)) {
+        seen.add(nestedId);
+        quoted.quoted = buildQuoted(storedNested.message, storedNested.key, from, sock, cache, seen);
+    } else if (nestedInfo?.quotedMessage && nestedId && !seen.has(nestedId)) {
         seen.add(nestedId);
         quoted.quoted = buildQuoted(nestedInfo.quotedMessage, {
             id: nestedId,
             participant: nestedInfo.participant || quoted.sender,
         }, from, sock, cache, seen);
-    } else if (nestedId && cache?.get(from)?.get(nestedId) && !seen.has(nestedId)) {
-        seen.add(nestedId);
-        const stored = cache.get(from).get(nestedId);
-        quoted.quoted = buildQuoted(stored.message, stored.key, from, sock, cache, seen);
     }
     quoted.forward = async () => {
         const target = quoted.isMedia ? await quoted.download() : null;
