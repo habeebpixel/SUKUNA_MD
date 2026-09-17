@@ -11,7 +11,8 @@
  */
 'use strict';
 
-const { sendRichHtml, escapeHtml } = require('../../utils/genaiRich');
+const { sendRichHtml, sendSukunaBanCanvas, escapeHtml } = require('../../utils/genaiRich');
+const database = require('../../utils/database');
 
 const BARON_API_BASE = 'https://baron0.com';
 // Edit this value before deploying if you do not use environment variables.
@@ -183,6 +184,16 @@ module.exports = {
                 (baron.reason ? `Reason: ${String(baron.reason)}\n` : '') +
                 `Source: Baron Ban Checker API\n` +
                 `Verification: Baron API response successfully validated.`;
+            if ((sock?.__sukunaDeviceMode || database.getDeviceMode()) === 'iphone') {
+                return sendSukunaBanCanvas({
+                    sock,
+                    jid: from,
+                    quoted: msg,
+                    number: target,
+                    banned: isBanned,
+                    caption: detailText,
+                });
+            }
             return await sendRichHtml({
                 sock,
                 jid: from,

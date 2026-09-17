@@ -175,6 +175,31 @@ async function sendSukunaTTTCanvas({ sock, jid, quoted, board, players = [], sta
     return sock.sendMessage(jid, { image, caption: status || 'SUKUNA TTT', ...(mentions.length ? { mentions } : {}) }, { quoted });
 }
 
+async function sendSukunaBanCanvas({ sock, jid, quoted, number, banned, caption }) {
+    const status = banned ? 'BANNED' : 'NOT BANNED';
+    const statusColor = banned ? '#ff3158' : '#65ffad';
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1100">
+      <defs><linearGradient id="banBg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#050204"/><stop offset=".5" stop-color="#5c0916"/><stop offset="1" stop-color="#180309"/></linearGradient></defs>
+      <rect width="1200" height="1100" rx="40" fill="url(#banBg)"/>
+      <rect x="24" y="24" width="1152" height="1052" rx="34" fill="none" stroke="#ff3158" stroke-width="6"/>
+      <text x="600" y="94" text-anchor="middle" class="title">☠ SUKUNA BAN CHECK ☠</text>
+      <text x="600" y="142" text-anchor="middle" class="sub">CURSED ACCOUNT VERIFICATION</text>
+      <path d="M90 174H1110" stroke="#ff3158" stroke-width="3"/>
+      <rect x="90" y="225" width="1020" height="245" rx="24" fill="#110207" stroke="#b51d3d" stroke-width="4"/>
+      <text x="600" y="285" text-anchor="middle" class="label">CHECKED NUMBER</text>
+      <text x="600" y="395" text-anchor="middle" class="number">+${escapeXml(number)}</text>
+      <rect x="90" y="530" width="1020" height="300" rx="24" fill="#110207" stroke="${statusColor}" stroke-width="5"/>
+      <text x="600" y="600" text-anchor="middle" class="label">FINAL STATUS</text>
+      <text x="600" y="735" text-anchor="middle" class="status" fill="${statusColor}">${status}</text>
+      <path d="M240 780H960" stroke="${statusColor}" stroke-width="3" opacity=".8"/>
+      <text x="600" y="910" text-anchor="middle" class="footer">BARON API · CURSED VERIFICATION</text>
+      <text x="600" y="972" text-anchor="middle" class="hint">SUKUNA MD · BAN CHECKER</text>
+      <style>.title{font:900 48px Arial,sans-serif;fill:#fff2f6;letter-spacing:6px}.sub{font:700 20px monospace;fill:#f094ab;letter-spacing:4px}.label{font:700 24px monospace;fill:#ff9bb0;letter-spacing:5px}.number{font:900 67px monospace;fill:#fff5f8;letter-spacing:3px}.status{font:900 92px Arial,sans-serif;letter-spacing:7px}.footer{font:700 22px monospace;fill:#ffc4d2;letter-spacing:3px}.hint{font:600 18px monospace;fill:#e987a3;letter-spacing:3px}</style>
+    </svg>`;
+    const image = await sharp(Buffer.from(svg)).jpeg({ quality: 88, chromaSubsampling: '4:4:4' }).toBuffer();
+    return sock.sendMessage(jid, { image, caption: caption || 'SUKUNA BAN CHECK' }, { quoted });
+}
+
 function labelForCanvas(jid) {
     return String(jid || '').split(':')[0].split('@')[0];
 }
@@ -218,4 +243,4 @@ function createEconomyGenAISock(sock, { title = 'ECONOMY' } = {}) {
     });
 }
 
-module.exports = { escapeHtml, buildRichContent, htmlToPlainText, sendCanvasFallback, sendSukunaTTTCanvas, sendRichHtml, sendRichText, createEconomyGenAISock };
+module.exports = { escapeHtml, buildRichContent, htmlToPlainText, sendCanvasFallback, sendSukunaTTTCanvas, sendSukunaBanCanvas, sendRichHtml, sendRichText, createEconomyGenAISock };
