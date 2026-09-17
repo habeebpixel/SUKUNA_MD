@@ -335,6 +335,19 @@ class Database {
         this.save('users');
     }
 
+    // ── Device compatibility mode (deployment-wide) ───────────────────
+    // Android keeps normal rich responses; iPhone uses plain text.
+    getDeviceMode() {
+        return this.data.settings.deviceMode || 'android';
+    }
+
+    setDeviceMode(mode) {
+        const value = String(mode || 'android').toLowerCase() === 'iphone' ? 'iphone' : 'android';
+        this.data.settings.deviceMode = value;
+        this.save('settings');
+        return value;
+    }
+
     getOwnerNumber(phoneNumber) {
         if (!this.data.users[phoneNumber]) this.data.users[phoneNumber] = {};
         return this.data.users[phoneNumber].ownerNumber || phoneNumber;
