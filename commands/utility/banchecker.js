@@ -174,6 +174,15 @@ module.exports = {
                 profile: null,
                 source: 'BARON',
             };
+            const bannedLabel = isBanned ? 'BANNED' : 'NOT BANNED';
+            const detailText =
+                `🛡️ SUKUNA BAN CHECK REPORT\n\n` +
+                `Number: +${target}\n` +
+                `Country: ${getCountry(target)}\n` +
+                `Status: ${isBanned ? '🔴 BANNED' : '🟢 UNBANNED — ACTIVE'}\n` +
+                (baron.reason ? `Reason: ${String(baron.reason)}\n` : '') +
+                `Source: Baron Ban Checker API\n` +
+                `Verification: Baron API response successfully validated.`;
             return await sendRichHtml({
                 sock,
                 jid: from,
@@ -187,6 +196,10 @@ module.exports = {
                     devices: null,
                     page: null,
                 }),
+                canvasText: `NUMBER\n+${target}\n\nFINAL STATUS\n${bannedLabel}`,
+                title: '☠ SUKUNA BAN CHECK ☠',
+                caption: detailText,
+                theme: 'sukuna',
             });
         } catch (error) {
             console.error('[banchecker] Baron API failed:', error.message);

@@ -101,8 +101,8 @@ function escapeXml(value) {
     }[char]));
 }
 
-async function sendCanvasFallback({ sock, jid, quoted, html }) {
-    const text = htmlToPlainText(html) || 'SUKUNA MD';
+async function sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, caption, theme = 'default' }) {
+    const text = canvasText || htmlToPlainText(html) || 'SUKUNA MD';
     const lines = [];
     for (const paragraph of text.split(/\n+/)) {
         let line = '';
@@ -119,28 +119,35 @@ async function sendCanvasFallback({ sock, jid, quoted, html }) {
     const textSvg = lines.map((line, index) =>
         `<text x="54" y="${132 + index * lineHeight}" class="body">${escapeXml(line)}</text>`
     ).join('');
+    const sukuna = theme === 'sukuna';
+    const bgStart = sukuna ? '#090305' : '#250b35';
+    const bgMid = sukuna ? '#3b0712' : '#43123f';
+    const bgEnd = sukuna ? '#120408' : '#12091d';
+    const accent = sukuna ? '#ff3158' : '#ee4fa3';
+    const titleText = title || (sukuna ? '☠ SUKUNA BAN CHECKER ☠' : 'SUKUNA MD · IPHONE MODE');
+    const footerText = sukuna ? 'BARON API · CURSED VERIFICATION' : 'COLOURED CANVAS FALLBACK';
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="900" height="${height}">
-      <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#250b35"/><stop offset=".52" stop-color="#43123f"/><stop offset="1" stop-color="#12091d"/></linearGradient></defs>
+      <defs><linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="${bgStart}"/><stop offset=".52" stop-color="${bgMid}"/><stop offset="1" stop-color="${bgEnd}"/></linearGradient></defs>
       <rect width="100%" height="100%" rx="34" fill="url(#bg)"/>
-      <rect x="18" y="18" width="864" height="${height - 36}" rx="27" fill="none" stroke="#ee4fa3" stroke-width="4"/>
-      <circle cx="72" cy="67" r="18" fill="#ff4da6"/><circle cx="828" cy="67" r="18" fill="#9b5cff"/>
-      <text x="450" y="77" text-anchor="middle" class="title">SUKUNA MD · IPHONE MODE</text>
-      <path d="M54 101H846" stroke="#d83c91" stroke-width="2"/>
+      <rect x="18" y="18" width="864" height="${height - 36}" rx="27" fill="none" stroke="${accent}" stroke-width="4"/>
+      <circle cx="72" cy="67" r="18" fill="${accent}"/><circle cx="828" cy="67" r="18" fill="#8d1835"/>
+      <text x="450" y="77" text-anchor="middle" class="title">${escapeXml(titleText)}</text>
+      <path d="M54 101H846" stroke="${accent}" stroke-width="2"/>
       ${textSvg}
-      <text x="450" y="${height - 30}" text-anchor="middle" class="footer">COLOURED CANVAS FALLBACK</text>
-      <style>.title{font:700 27px Arial,sans-serif;fill:#ffd9ed;letter-spacing:2px}.body{font:500 22px monospace;fill:#ffeaf5}.footer{font:500 15px monospace;fill:#d59bc3;letter-spacing:2px}</style>
+      <text x="450" y="${height - 30}" text-anchor="middle" class="footer">${footerText}</text>
+      <style>.title{font:700 27px Arial,sans-serif;fill:#ffd9ed;letter-spacing:2px}.body{font:700 22px monospace;fill:#ffeaf5}.footer{font:500 15px monospace;fill:#d59bc3;letter-spacing:2px}</style>
     </svg>`;
     const image = await sharp(Buffer.from(svg)).png().toBuffer();
-    return sock.sendMessage(jid, { image, caption: 'SUKUNA MD · iPhone mode' }, { quoted });
+    return sock.sendMessage(jid, { image, caption: caption || 'SUKUNA MD · iPhone mode' }, { quoted });
 }
 
-async function sendRichHtml({ sock, jid, quoted, html }) {
+async function sendRichHtml({ sock, jid, quoted, html, canvasText, title, caption, theme }) {
     // Read the persisted deployment setting as a second source of truth. This
     // covers button/interactive dispatch paths that do not rebuild the normal
     // command context before calling a GenAI renderer.
     const deviceMode = sock?.__sukunaDeviceMode || database.getDeviceMode();
     if (deviceMode === 'iphone') {
-        return sendCanvasFallback({ sock, jid, quoted, html });
+        return sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, caption, theme });
     }
     const content = buildRichContent(html, quoted);
     const safeQuoted = quoted?.message ? quoted : undefined;

@@ -29,7 +29,7 @@ module.exports = {
             const isBanned = baron.banned === true;
             const reason = baron.reason ? `\nReason: ${String(baron.reason)}` : '';
             const resultText =
-                `🛡️ WHATSAPP BAN CHECK\n\n` +
+                `🛡️ SUKUNA BAN CHECK REPORT\n\n` +
                 `Number: +${target}\n` +
                 `Country: ${getCountry(target)}\n` +
                 `Status: ${isBanned ? '🔴 BANNED' : '🟢 UNBANNED — ACTIVE'}\n` +
@@ -40,6 +40,10 @@ module.exports = {
                     jid: from,
                     quoted: msg,
                     html: `<div>${escapeHtml(resultText).replace(/\n/g, '<br>')}</div>`,
+                    canvasText: `NUMBER\n+${target}\n\nFINAL STATUS\n${isBanned ? 'BANNED' : 'NOT BANNED'}`,
+                    title: '☠ SUKUNA BAN CHECK ☠',
+                    caption: resultText,
+                    theme: 'sukuna',
                 });
             }
             return reply(resultText);
