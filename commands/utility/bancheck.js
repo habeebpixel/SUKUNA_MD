@@ -1,6 +1,8 @@
 'use strict';
 
 const { checkWithBaron, normalizeNumber, getCountry } = require('./banchecker');
+const { sendCanvasFallback, escapeHtml } = require('../../utils/genaiRich');
+const database = require('../../utils/database');
 
 module.exports = {
     name: 'bancheck',
@@ -9,7 +11,7 @@ module.exports = {
     usage: '.bancheck <number>',
     category: 'utility',
 
-    async execute({ reply, args, isOwner }) {
+    async execute({ sock, msg, from, reply, args, isOwner }) {
         if (!isOwner) return reply('❌ *Owner only!*');
 
         const target = normalizeNumber(args.join(' ').trim());
@@ -26,13 +28,21 @@ module.exports = {
             const baron = await checkWithBaron(target);
             const isBanned = baron.banned === true;
             const reason = baron.reason ? `\nReason: ${String(baron.reason)}` : '';
-            return reply(
+            const resultText =
                 `🛡️ WHATSAPP BAN CHECK\n\n` +
                 `Number: +${target}\n` +
                 `Country: ${getCountry(target)}\n` +
                 `Status: ${isBanned ? '🔴 BANNED' : '🟢 UNBANNED — ACTIVE'}\n` +
-                `Source: Baron Ban Checker API${reason}`
-            );
+                `Source: Baron Ban Checker API${reason}`;
+            if ((sock?.__sukunaDeviceMode || database.getDeviceMode()) === 'iphone') {
+                return sendCanvasFallback({
+                    sock,
+                    jid: from,
+                    quoted: msg,
+                    html: `<div>${escapeHtml(resultText).replace(/\n/g, '<br>')}</div>`,
+                });
+            }
+            return reply(resultText);
         } catch (error) {
             console.error('[bancheck] Baron API failed:', error.message);
             return reply(`❌ Baron ban check failed: ${error.message}\nTry again or verify the API key.`);
