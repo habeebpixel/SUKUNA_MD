@@ -87,8 +87,13 @@ function buildQuoted(message, key, from, sock, cache, seen = new Set()) {
 function quotedContext(msg, from, sock) {
     const info = contextInfo(msg?.message);
     if (!info?.quotedMessage) return null;
-    const key = { id: info.stanzaId || '', participant: info.participant || msg?.key?.participant || from };
-    return buildQuoted(info.quotedMessage, key, from, sock, sock?.__sukunaMessageCache);
+    const cache = sock?.__sukunaMessageCache;
+    const stored = info.stanzaId ? cache?.get(from)?.get(info.stanzaId) : null;
+    const key = stored?.key || { id: info.stanzaId || '', participant: info.participant || msg?.key?.participant || from };
+    // WhatsApp may provide only a shallow inline quoted copy. The stored
+    // message is authoritative because it preserves the explanation's own
+    // contextInfo. Use it whenever the stanza ID is available.
+    return buildQuoted(stored?.message || info.quotedMessage, key, from, sock, cache);
 }
 
 function createMessageContext({ msg, sock, from, sender, reply, args = [], prefix, commandName }) {
