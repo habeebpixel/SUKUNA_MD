@@ -60,6 +60,11 @@ function count(phoneNumber) {
     return getAll(phoneNumber).length;
 }
 
+function getById(phoneNumber, id, jid = null) {
+    if (!id) return null;
+    return getAll(phoneNumber, jid).find(entry => entry.id === id) || null;
+}
+
 /** Wipe vault for this session. */
 function clear(phoneNumber) {
     _store.set(phoneNumber, []);
@@ -78,4 +83,4 @@ function _purgeExpired() {
 // Run every 20 minutes — unref so it doesn't block process exit
 setInterval(_purgeExpired, 20 * 60 * 1000).unref();
 
-module.exports = { add, getAll, count, clear };
+module.exports = { add, getAll, getById, count, clear };
