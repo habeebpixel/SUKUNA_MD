@@ -12,10 +12,13 @@ module.exports = {
         let target = m.quoted;
         while (target.quoted) target = target.quoted;
         if (!target.isMedia) {
+            const chain = [];
+            for (let layer = m.quoted; layer; layer = layer.quoted) {
+                chain.push(`${layer.key?.id || 'no-id'}:${layer.type || 'unknown'}${layer.fromStore ? ':vault' : ''}`);
+            }
             return reply(
                 `⚠️ I resolved the quoted chain to ${target.type || 'a text message'}, but no media was found.\n` +
-                `Reply layer: ${m.quoted.type}\n` +
-                `Nested layer: ${m.quoted.quoted?.type || 'none'}\n` +
+                `Chain: ${chain.join(' → ')}\n` +
                 `The original media must have been received by this bot before deletion.`
             );
         }
