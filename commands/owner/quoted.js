@@ -11,6 +11,14 @@ module.exports = {
         if (!m?.quoted) return reply('⚠️ Reply to the message containing the explanation, then send `.quoted`.');
         let target = m.quoted;
         while (target.quoted) target = target.quoted;
+        if (!target.isMedia) {
+            return reply(
+                `⚠️ I resolved the quoted chain to ${target.type || 'a text message'}, but no media was found.\n` +
+                `Reply layer: ${m.quoted.type}\n` +
+                `Nested layer: ${m.quoted.quoted?.type || 'none'}\n` +
+                `The original media must have been received by this bot before deletion.`
+            );
+        }
         try {
             await target.forward();
             return reply(`✅ Recovered ${target.isMedia ? target.type.replace('Message', '') : 'quoted text'} from the message store.`);

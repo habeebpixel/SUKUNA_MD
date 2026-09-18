@@ -76,7 +76,14 @@ function quotedContext(msg, from, sock) {
     const cache = sock?.__sukunaMessageCache;
     const vault = info.stanzaId ? require('./retrieveStore').getById(sock?.__sukunaPhoneNumber, info.stanzaId, from) : null;
     if (vault) return buildVaultQuoted(vault, from, sock);
-    const stored = info.stanzaId ? cache?.get(from)?.get(info.stanzaId) : null;
+    let stored = info.stanzaId ? cache?.get(from)?.get(info.stanzaId) : null;
+    if (!stored && cache?.get(from)) {
+        const inlineText = messageText(info.quotedMessage).trim();
+        if (inlineText) {
+            const candidates = [...cache.get(from).values()].reverse();
+            stored = candidates.find(item => messageText(item.message).trim() === inlineText && contextInfo(item.message)?.quotedMessage);
+        }
+    }
     const key = stored?.key || { id: info.stanzaId || '', participant: info.participant || msg?.key?.participant || from };
     return buildQuoted(stored?.message || info.quotedMessage, key, from, sock, cache);
 }
