@@ -236,12 +236,12 @@ async function sendSukunaPianoCanvas({ sock, jid, quoted, rows = [], score = 0, 
     return sock.sendMessage(jid, { image, caption: `SUKUNA PIANO · ${status || `SCORE ${score}`}`, ...(gameOver ? {} : {}) }, { quoted });
 }
 
-async function sendRichHtml({ sock, jid, quoted, html, canvasText, title, caption, theme, mentions = [] }) {
+async function sendRichHtml({ sock, jid, quoted, html, canvasText, title, caption, theme, mentions = [], interactive = false }) {
     // Read the persisted deployment setting as a second source of truth. This
     // covers button/interactive dispatch paths that do not rebuild the normal
     // command context before calling a GenAI renderer.
     const deviceMode = sock?.__sukunaDeviceMode || database.getDeviceMode();
-    if (deviceMode === 'iphone') {
+    if (deviceMode === 'iphone' && !interactive) {
         return sendCanvasFallback({ sock, jid, quoted, html, canvasText, title, caption, theme, mentions });
     }
     const content = buildRichContent(html, quoted);

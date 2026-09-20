@@ -1,76 +1,28 @@
 'use strict';
 
-const { sendRichHtml, sendSukunaPianoCanvas, escapeHtml } = require('../../utils/genaiRich');
+const { sendRichHtml } = require('../../utils/genaiRich');
 
-const games = new Map();
-
-function gameFor(chat) {
-    if (!games.has(chat)) games.set(chat, freshGame());
-    return games.get(chat);
-}
-function freshGame() {
-    const game = { rows: [], score: 0, combo: 0, best: 0, level: 1, over: false, lastLane: -1, message: 'TAP A NOTE TO START' };
-    for (let i = 0; i < 8; i += 1) game.rows.push(makeRow(game, i));
-    return game;
-}
-function makeRow(game, index = 0) {
-    let lane = Math.floor(Math.random() * 4);
-    if (lane === game.lastLane) lane = (lane + 1 + Math.floor(Math.random() * 3)) % 4;
-    game.lastLane = lane;
-    const hold = index > 2 && Math.random() < Math.min(0.22, 0.08 + game.level * 0.015);
-    return { lane, hold, points: hold ? 3 : 1 };
-}
-function reset(chat) {
-    const game = freshGame();
-    games.set(chat, game);
-    return game;
-}
-function boardHtml(game) {
-    return [...game.rows].reverse().map(row => `<div class="row">${[0, 1, 2, 3].map(lane => lane === row.lane ? `<div class="tile ${row.hold ? 'hold' : ''}">${row.hold ? 'HOLD' : '♪'}</div>` : '<div class="empty"></div>').join('')}</div>`).join('');
-}
-function viewHtml(game) {
-    const stars = [1, 2, 3].map(star => `<span class="star ${game.score >= star * 10 ? 'on' : ''}">★</span>`).join('');
-    return `<div class="piano-card"><div class="brand">☠ SUKUNA PIANO ☠</div><div class="stats"><b>${game.score}</b><span>COMBO ${game.combo}</span><span>LV ${game.level}</span></div><div class="stars">${stars}</div><div class="board">${boardHtml(game)}<div class="hit-line"></div></div><div class="status">${escapeHtml(game.message)}</div><div class="help">TAP: .piano 1–4 · HOLD NOTES ARE WORTH 3 · MISS BREAKS COMBO</div></div>`;
-}
-function viewText(game) {
-    return `☠ SUKUNA PIANO ☠\n\nSCORE: ${game.score}   COMBO: ${game.combo}   LEVEL: ${game.level}\n\n${game.rows.map(row => [0, 1, 2, 3].map(lane => lane === row.lane ? (row.hold ? '[H]' : '[♪]') : ' · ').join(' ')).join('\n')}\n\n${game.message}\n\nSend .piano 1, .piano 2, .piano 3, or .piano 4.`;
-}
-async function sendBoard({ sock, msg, from, game }) {
-    if (sock?.__sukunaDeviceMode === 'iphone') {
-        return sendSukunaPianoCanvas({ sock, jid: from, quoted: msg, rows: game.rows, score: game.score, combo: game.combo, level: game.level, status: game.message, gameOver: game.over });
-    }
-    const html = `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>*{box-sizing:border-box}body{margin:0;padding:8px;background:radial-gradient(circle at 50% 0,#831329,#13030a 70%);font-family:Arial,sans-serif}.piano-card{color:#fff4f7;background:linear-gradient(145deg,#14040b,#650b1b 55%,#21040c);border:2px solid #ff3158;border-radius:20px;padding:16px;box-shadow:0 0 24px #ff315855}.brand{text-align:center;font:bold 20px Arial Black;letter-spacing:2px}.stats{display:flex;justify-content:space-between;align-items:end;margin:12px 2px 4px;color:#ffc4d2;font:700 11px monospace}.stats b{font:900 36px Arial;color:white}.stars{text-align:center;color:#3c1b24;font-size:22px;letter-spacing:7px;margin-bottom:8px}.star.on{color:#ffd25a;text-shadow:0 0 8px #ffd25a}.board{position:relative;background:#fff8fb;border-radius:14px;padding:5px;overflow:hidden}.row{height:43px;display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid #dbcbd0}.empty{border-right:1px solid #dbcbd0}.tile{margin:3px;border-radius:8px;background:linear-gradient(145deg,#3a1520,#080308);color:#fff;text-align:center;font:bold 22px/37px Arial;box-shadow:inset 0 0 0 2px #ff5778,0 3px 7px #30000b}.tile.hold{background:linear-gradient(180deg,#ff4968,#a70e2e);box-shadow:inset 0 0 0 2px #ffc4d2,0 0 12px #ff3158}.hit-line{height:4px;background:#ff3158;box-shadow:0 0 10px #ff3158}.status{text-align:center;font:bold 14px monospace;margin:12px 0 8px}.help{text-align:center;color:#f5a4b7;font:10px monospace;line-height:1.4}</style></head><body>${viewHtml(game)}</body></html>`;
-    return sendRichHtml({ sock, jid: from, quoted: msg, html, canvasText: viewText(game), title: 'SUKUNA PIANO', caption: `SUKUNA PIANO · ${game.message}`, theme: 'sukuna' });
-}
-async function execute({ sock, msg, from, reply, args = [] }) {
-    const action = String(args[0] || '').toLowerCase();
-    if (action === 'stop' || action === 'end') {
-        games.delete(from);
-        return reply('🎹 Piano round ended. Send `.piano` to start a new song.');
-    }
-    if (action === 'help') return reply('🎹 `.piano` starts the game. Then send `.piano 1`, `.piano 2`, `.piano 3`, or `.piano 4` to tap the matching lane. Send `.piano stop` to end.');
-    const game = action ? gameFor(from) : reset(from);
-    if (!action) {
-        game.message = 'SONG READY · TAP THE LOWEST NOTE';
-        return sendBoard({ sock, msg, from, game });
-    }
-    if (game.over) return reply('🎹 Round over. Send `.piano` to play again.');
-    const lane = Number(action) - 1;
-    if (!Number.isInteger(lane) || lane < 0 || lane > 3) return reply('🎹 Choose a lane from 1 to 4. Example: `.piano 2`');
-    const note = game.rows.shift();
-    if (lane !== note.lane) {
-        game.combo = 0;
-        game.over = true;
-        game.message = `MISS · THE NOTE WAS LANE ${note.lane + 1} · SCORE ${game.score}`;
-        return sendBoard({ sock, msg, from, game });
-    }
-    game.combo += 1;
-    game.best = Math.max(game.best, game.combo);
-    game.score += note.points * (1 + Math.floor(game.combo / 10));
-    game.level = Math.min(20, 1 + Math.floor(game.score / 20));
-    game.rows.push(makeRow(game, game.rows.length + game.score));
-    game.message = note.hold ? `HOLD HIT · +${note.points} · KEEP PLAYING` : `PERFECT · +${note.points} · NEXT NOTE`;
-    return sendBoard({ sock, msg, from, game });
+function pianoHtml() {
+    return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><style>
+*{box-sizing:border-box}html,body{margin:0;background:transparent;font-family:Arial,sans-serif}body{padding:6px;background:radial-gradient(circle at 50% 0,#073c73,#020817 72%)}button{font:inherit;cursor:pointer}.card{padding:14px;border:2px solid #25c7ff;border-radius:22px;background:linear-gradient(145deg,#031326,#063568 54%,#020a18);color:#e9fbff;box-shadow:inset 0 0 0 3px #075284,0 0 25px #00aaff55}.title{text-align:center;color:#baf3ff;font:bold 24px Arial Black,Arial,sans-serif;letter-spacing:2px;text-shadow:0 0 14px #00c8ff}.songbar{display:flex;gap:6px;overflow-x:auto;padding:8px 0}.song{flex:1;min-width:105px;padding:8px 6px;border:1px solid #177bb0;border-radius:10px;background:#06213a;color:#9bdfff;font:bold 10px monospace}.song.active{background:#0a76ad;color:#fff;border-color:#6bdfff;box-shadow:0 0 12px #00bfff}.hud{display:flex;justify-content:space-between;align-items:center;margin:7px 2px;color:#91ddff;font:700 11px monospace}.hud b{font:900 30px Arial;color:white;text-shadow:0 0 10px #00c8ff}.meter{height:6px;border-radius:5px;background:#06213c;margin:4px 0 8px;overflow:hidden}.meter i{display:block;width:0;height:100%;background:#27d8ff;box-shadow:0 0 9px #00d5ff;transition:width .2s}.stage{position:relative;height:405px;overflow:hidden;border:2px solid #168bc3;border-radius:15px;background:linear-gradient(180deg,#041f3c,#020b18);box-shadow:inset 0 0 30px #007bc744}.stage:after{content:'';position:absolute;left:0;right:0;bottom:58px;height:4px;background:#27d8ff;box-shadow:0 0 14px #00d5ff;z-index:5}.lane{position:absolute;top:0;bottom:0;width:25%;border-right:1px solid #12618c}.lane:nth-child(1){left:0}.lane:nth-child(2){left:25%}.lane:nth-child(3){left:50%}.lane:nth-child(4){left:75%;border-right:0}.tile{position:absolute;z-index:3;left:4px;right:4px;height:65px;border:2px solid #c6f6ff;border-radius:11px;background:linear-gradient(145deg,#0acbff,#07548e 70%,#031b38);box-shadow:0 0 15px #00bfff,inset 0 0 12px #baf6ff88;display:grid;place-items:center;color:#fff;font:bold 23px Arial;text-shadow:0 0 8px #00cfff}.tile.hold{height:120px;background:linear-gradient(180deg,#35e7ff,#0a69bb 60%,#05244f);color:#dffbff}.tile.hit{opacity:.25;transform:scale(.9);transition:.12s}.controls{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-top:8px}.key{height:48px;border:2px solid #159bd0;border-radius:11px;background:linear-gradient(#0b5d91,#042743);color:#d9faff;font:bold 21px Arial;box-shadow:0 0 8px #008bc955}.key:active{transform:scale(.94);background:#0d87bb}.actions{display:flex;gap:6px;margin-top:8px}.action{flex:1;padding:10px;border:1px solid #167fb4;border-radius:10px;background:#06233d;color:#aeeaff;font:bold 11px monospace}.status{text-align:center;min-height:28px;padding:7px 3px;color:#b4edff;font:bold 12px monospace}.hint{text-align:center;color:#6eafd0;font:10px monospace}.hidden{display:none!important}
+</style></head><body><div class="card"><div class="title">🎹 NEON PIANO TILES</div><div class="songbar"><button class="song active" data-song="0">NEON SONATA<br><small>120 BPM</small></button><button class="song" data-song="1">MIDNIGHT DRIVE<br><small>138 BPM</small></button><button class="song" data-song="2">SUKUNA RUSH<br><small>156 BPM</small></button></div><div class="hud"><span>SCORE <b id="score">0</b></span><span id="combo">COMBO 0</span><span id="bpm">120 BPM</span></div><div class="meter"><i id="progress"></i></div><div class="stage" id="stage"><div class="lane"></div><div class="lane"></div><div class="lane"></div><div class="lane"></div></div><div class="controls"><button class="key" data-lane="0">1</button><button class="key" data-lane="1">2</button><button class="key" data-lane="2">3</button><button class="key" data-lane="3">4</button></div><div class="status" id="status">Choose a song, then tap START</div><div class="actions"><button class="action" id="start">▶ START</button><button class="action" id="restart">↻ RESTART</button></div><div class="hint">Tap the neon tiles as they cross the blue line · miss one and the song stops</div></div><script>(function(){
+var stage=document.getElementById('stage'),scoreEl=document.getElementById('score'),comboEl=document.getElementById('combo'),bpmEl=document.getElementById('bpm'),statusEl=document.getElementById('status'),progressEl=document.getElementById('progress'),startBtn=document.getElementById('start'),restartBtn=document.getElementById('restart'),songs=[{name:'NEON SONATA',bpm:120,pattern:[0,1,2,3,1,2,0,3,2,1,3,0]},{name:'MIDNIGHT DRIVE',bpm:138,pattern:[0,2,1,3,2,0,3,1,0,3,2,1]},{name:'SUKUNA RUSH',bpm:156,pattern:[0,1,3,2,0,3,1,2,3,0,2,1]}],song=0,tiles=[],running=false,raf=0,last=0,spawnClock=0,score=0,combo=0,beat=0,ctx=null,master=null,startedAt=0;
+function setStatus(t){statusEl.textContent=t}function audio(){if(!ctx){ctx=new(window.AudioContext||window.webkitAudioContext)();master=ctx.createGain();master.gain.value=.08;master.connect(ctx.destination)}if(ctx.state==='suspended')ctx.resume()}function tone(lane,hold){audio();var o=ctx.createOscillator(),g=ctx.createGain(),freq=[261.63,293.66,329.63,392][lane];o.type='sine';o.frequency.value=freq*(hold?2:1);g.gain.setValueAtTime(.0001,ctx.currentTime);g.gain.exponentialRampToValueAtTime(.42,ctx.currentTime+.01);g.gain.exponentialRampToValueAtTime(.0001,ctx.currentTime+(hold ? .32 : .16));o.connect(g);g.connect(master);o.start();o.stop(ctx.currentTime+(hold ? .35 : .18))}function clear(){tiles.forEach(function(t){t.el.remove()});tiles=[]}function reset(){cancelAnimationFrame(raf);clear();running=false;score=0;combo=0;beat=0;spawnClock=0;scoreEl.textContent='0';comboEl.textContent='COMBO 0';progressEl.style.width='0%';setStatus('Choose a song, then tap START');startBtn.textContent='▶ START'}function spawn(){var s=songs[song],lane=s.pattern[beat%s.pattern.length],hold=(beat>5&&beat%7===0),el=document.createElement('div');el.className='tile'+(hold?' hold':'');el.textContent=hold?'HOLD':'♪';el.dataset.lane=lane;el.style.top='-130px';stage.appendChild(el);tiles.push({el:el,lane:lane,y:-130,hold:hold,hit:false});beat++}function end(message){running=false;cancelAnimationFrame(raf);setStatus(message+' · score '+score+' · tap RESTART');startBtn.textContent='▶ START'}function miss(){combo=0;comboEl.textContent='MISS · COMBO 0';end('MISS — the song stopped')}function frame(now){if(!running)return;var s=songs[song],dt=Math.min(40,now-last);last=now;spawnClock+=dt;var interval=60000/s.bpm;if(spawnClock>=interval){spawnClock-=interval;spawn()}var speed=210+s.bpm*.65;tiles.forEach(function(t){if(!t.hit){t.y+=speed*dt/1000;t.el.style.top=t.y+'px';if(t.y>385)miss()}});if(!running)return;progressEl.style.width=Math.min(100,(beat%64)/64*100)+'%';raf=requestAnimationFrame(frame)}function start(){if(running)return;audio();clear();tiles=[];score=0;combo=0;beat=0;spawnClock=0;startedAt=performance.now();scoreEl.textContent='0';comboEl.textContent='COMBO 0';setStatus(songs[song].name+' · TAP THE TILES');running=true;startBtn.textContent='Ⅱ PAUSE';last=performance.now();raf=requestAnimationFrame(frame)}function tap(lane){if(!running){start();return}var candidates=tiles.filter(function(t){return !t.hit&&t.lane===lane&&t.y>300&&t.y<405}).sort(function(a,b){return b.y-a.y});var t=candidates[0];if(!t)return miss();t.hit=true;t.el.classList.add('hit');tone(lane,t.hold);combo++;score+=t.hold?3+combo:1+Math.floor(combo/8);scoreEl.textContent=score;comboEl.textContent='COMBO '+combo;setStatus(t.hold?'HOLD NOTE · PERFECT':'PERFECT');setTimeout(function(){t.el.remove()},130)}document.querySelectorAll('.song').forEach(function(b){b.onclick=function(){song=Number(b.dataset.song);document.querySelectorAll('.song').forEach(function(x){x.classList.remove('active')});b.classList.add('active');bpmEl.textContent=songs[song].bpm+' BPM';reset();setStatus(songs[song].name+' selected · tap START')}});document.querySelectorAll('.key').forEach(function(b){b.onclick=function(){tap(Number(b.dataset.lane))}});startBtn.onclick=function(){if(running){running=false;cancelAnimationFrame(raf);startBtn.textContent='▶ RESUME';setStatus('Paused')}else start()};restartBtn.onclick=reset;document.addEventListener('keydown',function(e){var n={'1':0,'2':1,'3':2,'4':3}[e.key];if(n!==undefined)tap(n)});reset()})();</script></body></html>`;
 }
 
-module.exports = { name: 'piano', aliases: ['pianotiles', 'tiles'], description: 'Play Sukuna Piano Tiles', usage: '.piano | .piano 1-4 | .piano stop', category: 'games', execute };
+module.exports = {
+    name: 'piano',
+    aliases: ['pianotiles', 'tiles'],
+    description: 'Play interactive neon Piano Tiles with songs and falling notes',
+    usage: '.piano',
+    category: 'games',
+    async execute({ sock, msg, from, reply }) {
+        try {
+            await sendRichHtml({ sock, jid: from, quoted: msg, html: pianoHtml(), interactive: true });
+        } catch (error) {
+            console.error('[PIANO]', error.message);
+            await reply('🎹 Piano could not open on this client. Please update WhatsApp and try `.piano` again.');
+        }
+    },
+    pianoHtml,
+};
