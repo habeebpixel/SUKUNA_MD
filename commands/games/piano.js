@@ -3,9 +3,12 @@
 const { sendRichHtml } = require('../../utils/genaiRich');
 
 function buildTrackWav(pattern, bpm) {
-    const rate = 22050;
+    // Keep the embedded melodies compact enough for WhatsApp rich cards.
+    // These are simple synthesized notes, so 8 kHz is sufficient and keeps
+    // the three selectable songs well below large-message limits.
+    const rate = 8000;
     const beatSeconds = 60 / bpm;
-    const totalSamples = Math.floor(rate * beatSeconds * pattern.length * 2);
+    const totalSamples = Math.floor(rate * beatSeconds * pattern.length);
     const data = Buffer.alloc(totalSamples * 2);
     const frequencies = [261.63, 293.66, 329.63, 392];
     for (let i = 0; i < totalSamples; i += 1) {
