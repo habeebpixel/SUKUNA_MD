@@ -204,6 +204,38 @@ function labelForCanvas(jid) {
     return String(jid || '').split(':')[0].split('@')[0];
 }
 
+async function sendSukunaPianoCanvas({ sock, jid, quoted, rows = [], score = 0, combo = 0, level = 1, status = '', gameOver = false }) {
+    const safeRows = Array.isArray(rows) ? rows.slice(-8).reverse() : [];
+    const boardX = 100;
+    const boardY = 230;
+    const cellW = 250;
+    const cellH = 82;
+    const tileMarkup = safeRows.map((row, rowIndex) => {
+        const y = boardY + rowIndex * cellH;
+        return [0, 1, 2, 3].map(lane => {
+            if (row?.lane !== lane) return '';
+            const hold = row.hold;
+            return `<rect x="${boardX + lane * cellW + 8}" y="${y + 8}" width="${cellW - 16}" height="${hold ? cellH * 1.65 : cellH - 16}" rx="14" fill="${hold ? '#ff3158' : '#170912'}" stroke="${hold ? '#ffb2c1' : '#ff5b79'}" stroke-width="4"/><text x="${boardX + lane * cellW + cellW / 2}" y="${y + 57}" text-anchor="middle" class="tile">${hold ? 'HOLD' : '♪'}</text>`;
+        }).join('');
+    }).join('');
+    const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="1100">
+      <defs><linearGradient id="piano" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#050204"/><stop offset=".48" stop-color="#650b1c"/><stop offset="1" stop-color="#16040b"/></linearGradient></defs>
+      <rect width="1200" height="1100" rx="40" fill="url(#piano)"/><rect x="24" y="24" width="1152" height="1052" rx="34" fill="none" stroke="#ff3158" stroke-width="6"/>
+      <text x="600" y="78" text-anchor="middle" class="title">☠ SUKUNA PIANO ☠</text>
+      <text x="600" y="130" text-anchor="middle" class="stats">SCORE ${score}   ·   COMBO ${combo}   ·   LV ${level}</text>
+      <path d="M92 165H1108" stroke="#ff3158" stroke-width="3"/>
+      <rect x="${boardX}" y="${boardY - 18}" width="${cellW * 4}" height="${cellH * 8 + 36}" rx="22" fill="#fff6fa" opacity=".94"/>
+      <path d="M${boardX + cellW} ${boardY - 18}V${boardY + cellH * 8 + 18} M${boardX + cellW * 2} ${boardY - 18}V${boardY + cellH * 8 + 18} M${boardX + cellW * 3} ${boardY - 18}V${boardY + cellH * 8 + 18}" stroke="#d9c8ce" stroke-width="3"/>
+      ${tileMarkup}
+      <rect x="${boardX}" y="${boardY + cellH * 7 - 5}" width="${cellW * 4}" height="8" fill="#ff3158"/>
+      <text x="600" y="950" text-anchor="middle" class="status">${escapeXml(status || (gameOver ? 'ROUND OVER' : 'SEND .PIANO 1–4 TO TAP'))}</text>
+      <text x="600" y="1005" text-anchor="middle" class="hint">BLACK NOTES · RED HOLD NOTES · DO NOT MISS</text>
+      <style>.title{font:900 45px Arial,sans-serif;fill:#fff2f6;letter-spacing:6px}.stats{font:800 24px monospace;fill:#ffc4d2;letter-spacing:2px}.tile{font:900 27px Arial,sans-serif;fill:#fff5f8}.status{font:900 30px monospace;fill:#fff2f6}.hint{font:700 17px monospace;fill:#f094ab;letter-spacing:2px}</style>
+    </svg>`;
+    const image = await sharp(Buffer.from(svg)).jpeg({ quality: 88, chromaSubsampling: '4:4:4' }).toBuffer();
+    return sock.sendMessage(jid, { image, caption: `SUKUNA PIANO · ${status || `SCORE ${score}`}`, ...(gameOver ? {} : {}) }, { quoted });
+}
+
 async function sendRichHtml({ sock, jid, quoted, html, canvasText, title, caption, theme, mentions = [] }) {
     // Read the persisted deployment setting as a second source of truth. This
     // covers button/interactive dispatch paths that do not rebuild the normal
@@ -243,4 +275,4 @@ function createEconomyGenAISock(sock, { title = 'ECONOMY' } = {}) {
     });
 }
 
-module.exports = { escapeHtml, buildRichContent, htmlToPlainText, sendCanvasFallback, sendSukunaTTTCanvas, sendSukunaBanCanvas, sendRichHtml, sendRichText, createEconomyGenAISock };
+module.exports = { escapeHtml, buildRichContent, htmlToPlainText, sendCanvasFallback, sendSukunaTTTCanvas, sendSukunaBanCanvas, sendSukunaPianoCanvas, sendRichHtml, sendRichText, createEconomyGenAISock };
