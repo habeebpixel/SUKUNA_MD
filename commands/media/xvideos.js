@@ -15,7 +15,7 @@ const { prefixOf } = require('../../utils/commandHelpers');
 
 // Deployment option: paste the Apify token between the quotes below.
 // The environment variable takes priority when it is configured by the host.
-const APIFY_TOKEN_IN_FILE = 'PASTE_APIFY_TOKEN_HERE';
+const APIFY_TOKEN_IN_FILE = 'apify_api_G2gwPDqKfT5Dp00m2fDYjn3v8Xb78i05n8bz';
 const ACTOR_RUN_ENDPOINT = 'https://api.apify.com/v2/acts/justwatching~free-porn-sex-tube-videos-xxx/runs';
 const APIFY_API_TOKEN = String(process.env.APIFY_API_TOKEN || APIFY_TOKEN_IN_FILE).trim();
 const API_TIMEOUT_MS = 30_000;
