@@ -13,8 +13,11 @@
 const axios = require('axios');
 const { prefixOf } = require('../../utils/commandHelpers');
 
+// Deployment option: paste the Apify token between the quotes below.
+// The environment variable takes priority when it is configured by the host.
+const APIFY_TOKEN_IN_FILE = 'PASTE_APIFY_TOKEN_HERE';
 const ACTOR_RUN_ENDPOINT = 'https://api.apify.com/v2/acts/justwatching~free-porn-sex-tube-videos-xxx/runs';
-const APIFY_API_TOKEN = String(process.env.APIFY_API_TOKEN || '').trim();
+const APIFY_API_TOKEN = String(process.env.APIFY_API_TOKEN || APIFY_TOKEN_IN_FILE).trim();
 const API_TIMEOUT_MS = 30_000;
 const RUN_TIMEOUT_MS = 150_000;
 const POLL_INTERVAL_MS = 2_500;
@@ -107,7 +110,7 @@ function firstText(value, keys = ['title', 'name', 'caption']) {
 }
 
 function authHeaders() {
-    if (!APIFY_API_TOKEN) throw new Error('APIFY_API_TOKEN is not configured');
+    if (!APIFY_API_TOKEN || APIFY_API_TOKEN === 'PASTE_APIFY_TOKEN_HERE') throw new Error('Apify token is not configured');
     return {
         Authorization: `Bearer ${APIFY_API_TOKEN}`,
         'User-Agent': 'SUKUNA-MD/3.0',
@@ -228,7 +231,7 @@ module.exports = {
         const px = prefixOf(prefix);
         const input = Array.isArray(args) ? args.join(' ').trim() : '';
         if (!input) return reply(`🔞 *XVIDEOS SEARCH + DOWNLOAD*\n\nUsage: ${px}xvideos <search text or video URL>\nExample: ${px}xvideos lady dimitrescu`);
-        if (!APIFY_API_TOKEN) return reply('❌ Xvideos is not configured: the deployment needs APIFY_API_TOKEN.');
+        if (!APIFY_API_TOKEN || APIFY_API_TOKEN === 'PASTE_APIFY_TOKEN_HERE') return reply('❌ Xvideos is not configured: paste the Apify token into APIFY_TOKEN_IN_FILE in commands/media/xvideos.js or set APIFY_API_TOKEN.');
 
         try {
             await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } }).catch(() => {});
