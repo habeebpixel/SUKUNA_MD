@@ -10,7 +10,7 @@ const GENERATE_ENDPOINT = `${API_BASE}/api/generate`;
 const STATUS_ENDPOINT = jobId => `${API_BASE}/api/status/${encodeURIComponent(jobId)}`;
 const MAX_PROMPT_LENGTH = 1_000;
 const POLL_INTERVAL_MS = 5_000;
-const MAX_POLL_ATTEMPTS = 120; // 10 minutes
+const MAX_POLL_ATTEMPTS = 180; // 15 minutes
 const REQUEST_TIMEOUT_MS = 45_000;
 const MAX_VIDEO_BYTES = Math.min(MAX_MEDIA_BYTES, 50 * 1024 * 1024);
 
@@ -39,7 +39,7 @@ async function readResponseJson(response, label) {
     const text = await response.text();
     const data = parseJsonSafely(text);
     if (!response.ok) {
-        const detail = data?.error || data?.message || text.slice(0, 180) || `HTTP ${response.status}`;
+        const detail = data?.error || data?.message || `HTTP ${response.status}`;
         throw new Error(`${label}: ${detail}`);
     }
     if (!data || typeof data !== 'object') throw new Error(`${label}: invalid JSON response`);
@@ -67,11 +67,24 @@ async function createJob(imagePath, prompt, mimetype) {
 async function waitForJob(jobId, onProgress = () => {}) {
     for (let attempt = 1; attempt <= MAX_POLL_ATTEMPTS; attempt += 1) {
         await new Promise(resolve => setTimeout(resolve, POLL_INTERVAL_MS));
-        const response = await fetchApi(STATUS_ENDPOINT(jobId), {
-            headers: { Accept: 'application/json', 'User-Agent': 'SUKUNA-MD/3.0' },
-            signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
-        });
-        const status = await readResponseJson(response, 'video status request failed');
+        let status;
+        try {
+            const response = await fetchApi(STATUS_ENDPOINT(jobId), {
+                headers: { Accept: 'application/json', 'User-Agent': 'SUKUNA-MD/3.0' },
+                signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+            });
+            if ([408, 429, 500, 502, 503, 504].includes(response.status)) {
+                onProgress(`provider temporary HTTP ${response.status}; retrying`);
+                continue;
+            }
+            status = await readResponseJson(response, 'video status request failed');
+        } catch (error) {
+            if (/HTTP (408|429|500|502|503|504)/i.test(error.message) || /fetch failed|network|timeout|invalid JSON response/i.test(error.message)) {
+                onProgress('provider temporarily unavailable; retrying');
+                continue;
+            }
+            throw error;
+        }
         const state = String(status.status || '').toLowerCase();
         if (state === 'done' || state === 'completed' || state === 'success') {
             if (!status.download_url) throw new Error('video job completed without a download URL');

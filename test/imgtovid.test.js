@@ -6,7 +6,7 @@ const imgtovid = require('../commands/media/imgtovid');
 
 test('uses the requested image-to-video service', () => {
     assert.equal(imgtovid.API_BASE, 'https://pasqua-video-gen.onrender.com');
-    assert.equal(imgtovid.MAX_POLL_ATTEMPTS, 120);
+    assert.equal(imgtovid.MAX_POLL_ATTEMPTS, 180);
 });
 
 test('recognizes MP4 signatures and rejects invalid files', () => {
@@ -18,7 +18,7 @@ test('recognizes MP4 signatures and rejects invalid files', () => {
 
 test('keeps prompts and polling bounded', () => {
     assert.equal(imgtovid.MAX_PROMPT_LENGTH, 1000);
-    assert.equal(imgtovid.MAX_POLL_ATTEMPTS * 5000, 600000);
+    assert.equal(imgtovid.MAX_POLL_ATTEMPTS * 5000, 900000);
 });
 
 console.log('imgtovid regression passed');
