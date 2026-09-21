@@ -145,7 +145,8 @@ async function downloadMp4(url, referer = '') {
 
 function captionFor(video) {
     const views = video.views ? `\n👁️ ${video.views.toLocaleString()} views` : '';
-    return `🔞 *${video.title}*\n\n🏷️ ${video.category}${views}\n⏱️ ${formatDuration(video.duration)}\n\n> SUKUNA MD • 18+`;
+    const source = video.pageUrl || 'Unavailable';
+    return `🔞 *${video.title}*\n\n🏷️ ${video.category}${views}\n⏱️ ${formatDuration(video.duration)}\n\n🔗 Source: ${source}\n🎬 MP4: ${video.mp4}\n\n> SUKUNA MD • 18+\nUse .aio <link> to download a copied link.`;
 }
 
 module.exports = {
