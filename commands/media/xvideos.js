@@ -1,26 +1,30 @@
 /**
- * Xvideos Search + Download Command
- * Usage: .xvideos <search text or Xvideos video URL>
+ * Xvideos command backed by the RapidAPI Porn XNXX API.
+ * Usage: .xvideos <search text or XNXX/video URL>
  *
- * This version has no API dependency. It requests the public Xvideos search or
- * video page, extracts the player URLs exposed by the page, downloads the MP4
- * itself, validates it, and sends the finished file to WhatsApp.
+ * Deployment: paste the RapidAPI key into RAPIDAPI_KEY below, then restart.
+ * RAPIDAPI_KEY may also be supplied by the hosting environment.
  */
 'use strict';
 
 const axios = require('axios');
 const { prefixOf } = require('../../utils/commandHelpers');
 
-const SEARCH_TIMEOUT_MS = 30_000;
-const PAGE_TIMEOUT_MS = 45_000;
+// ===== RapidAPI configuration =====
+const RAPIDAPI_KEY = String(process.env.RAPIDAPI_KEY || 'PASTE_RAPIDAPI_KEY_HERE').trim();
+const RAPIDAPI_BASE_URL = 'https://porn-xnxx-api.p.rapidapi.com';
+const RAPIDAPI_HOST = 'porn-xnxx-api.p.rapidapi.com';
+const SEARCH_ENDPOINT = `${RAPIDAPI_BASE_URL}/search`;
+const DOWNLOAD_ENDPOINT = `${RAPIDAPI_BASE_URL}/download`;
+
+const API_TIMEOUT_MS = 45_000;
 const DOWNLOAD_TIMEOUT_MS = 90_000;
 const MAX_VIDEO_BYTES = 50 * 1024 * 1024;
 const MIN_VIDEO_BYTES = 10 * 1024;
-const MAX_PAGE_CANDIDATES = 8;
-const MAX_MEDIA_CANDIDATES = 8;
-const UA = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36';
+const MAX_RESULTS = 8;
+const UA = 'SUKUNA-MD/3.0';
 
-function cleanText(value, fallback = 'Xvideos video', maxLength = 180) {
+function cleanText(value, fallback = 'Video', maxLength = 180) {
     const text = String(value ?? '').replace(/[\u0000-\u001F]/g, '').trim();
     if (!text) return fallback;
     return text.length > maxLength ? `${text.slice(0, maxLength - 1).trimEnd()}…` : text;
@@ -30,82 +34,57 @@ function isHttpUrl(value) {
     try { return /^https?:$/i.test(new URL(String(value).trim()).protocol); } catch (_) { return false; }
 }
 
-function isXvideosUrl(value) {
-    try { return isHttpUrl(value) && /(^|\.)xvideos\.com$/i.test(new URL(value).hostname); } catch (_) { return false; }
+function isConfigured() {
+    return Boolean(RAPIDAPI_KEY && RAPIDAPI_KEY !== 'PASTE_RAPIDAPI_KEY_HERE');
 }
 
-function decodeUrl(value) {
-    return String(value)
-        .replace(/\\u0026/g, '&')
-        .replace(/\\\//g, '/')
-        .replace(/&amp;/g, '&')
-        .replace(/\\x26/g, '&')
-        .replace(/^['"]|['"]$/g, '');
+function apiHeaders(json = false) {
+    return {
+        'x-rapidapi-key': RAPIDAPI_KEY,
+        'x-rapidapi-host': RAPIDAPI_HOST,
+        'User-Agent': UA,
+        Accept: 'application/json',
+        ...(json ? { 'Content-Type': 'application/json' } : {}),
+    };
 }
 
-function absoluteUrl(value, base) {
-    const decoded = decodeUrl(value);
-    try {
-        const url = new URL(decoded, base);
-        return isHttpUrl(url.href) ? url.href : '';
-    } catch (_) { return ''; }
+function errorFromResponse(response, fallback) {
+    const message = response.data?.message || response.data?.error || fallback;
+    return new Error(`${cleanText(message, fallback, 180)} (HTTP ${response.status})`);
 }
 
-function searchUrl(query) {
-    return `https://www.xvideos.com/?k=${encodeURIComponent(query)}`;
-}
-
-function extractPageUrls(html) {
-    const urls = [];
-    const source = String(html || '');
-    const patterns = [
-        /href=["'](\/video\/(?:[^"']+))["']/gi,
-        /https?:\\?\/\\?\/www\.xvideos\.com\/video\/[^"'\\\s<>]+/gi,
-    ];
-    for (const pattern of patterns) {
-        for (const match of source.matchAll(pattern)) {
-            const raw = match[1] || match[0];
-            const url = absoluteUrl(raw, 'https://www.xvideos.com/');
-            if (isXvideosUrl(url) && /\/video\//i.test(url)) urls.push(url.split('#')[0]);
-        }
-    }
-    return [...new Set(urls)].slice(0, MAX_PAGE_CANDIDATES);
-}
-
-function extractMediaUrls(html, baseUrl) {
-    const source = String(html || '');
-    const urls = [];
-    const patterns = [
-        /(?:setVideoUrlHigh|setVideoUrlLow|setVideoHLS|video_url|contentUrl)\s*['"\s:=,]+([^'"\s,;}]+)/gi,
-        /https?:\\?\/\\?\/[^\s"'<>]+\.(?:mp4|m3u8)(?:\?[^\s"'<>]*)?/gi,
-    ];
-    for (const pattern of patterns) {
-        for (const match of source.matchAll(pattern)) {
-            const url = absoluteUrl(match[1] || match[0], baseUrl);
-            if (isHttpUrl(url) && /(?:\.mp4(?:$|[?#])|\.m3u8(?:$|[?#]))/i.test(url)) urls.push(url);
-        }
-    }
-    return [...new Set(urls)].slice(0, MAX_MEDIA_CANDIDATES);
-}
-
-async function fetchPage(url, timeout = PAGE_TIMEOUT_MS) {
-    const response = await axios.get(url, {
-        timeout,
-        maxContentLength: 12 * 1024 * 1024,
-        responseType: 'text',
-        validateStatus: () => true,
-        headers: { 'User-Agent': UA, Accept: 'text/html,application/xhtml+xml' },
-    });
-    if (response.status < 200 || response.status >= 300) throw new Error(`Xvideos page HTTP ${response.status}`);
-    return String(response.data || '');
+function normalizeSearchResult(item) {
+    if (!item || typeof item !== 'object' || !isHttpUrl(item.video_link)) return null;
+    return {
+        title: cleanText(item.title, 'XNXX video'),
+        videoLink: item.video_link,
+        thumbnail: isHttpUrl(item.thumbnail) ? item.thumbnail : '',
+        views: cleanText(item.views, '', 40),
+        duration: cleanText(item.duration, '', 40),
+    };
 }
 
 async function searchVideos(query) {
-    const url = searchUrl(query);
-    const html = await fetchPage(url, SEARCH_TIMEOUT_MS);
-    const pages = extractPageUrls(html);
-    if (!pages.length) throw new Error('No Xvideos search results');
-    return { pages, source: url };
+    const response = await axios.post(SEARCH_ENDPOINT, { q: query, page: 1 }, {
+        headers: apiHeaders(true), timeout: API_TIMEOUT_MS, validateStatus: () => true,
+    });
+    if (response.status < 200 || response.status >= 300) throw errorFromResponse(response, 'RapidAPI search failed');
+    const results = Array.isArray(response.data?.results)
+        ? response.data.results.map(normalizeSearchResult).filter(Boolean).slice(0, MAX_RESULTS)
+        : [];
+    if (!results.length) throw new Error('RapidAPI returned no video results');
+    return results;
+}
+
+async function getDownloadLinks(videoLink) {
+    const response = await axios.post(DOWNLOAD_ENDPOINT, { video_link: videoLink }, {
+        headers: apiHeaders(true), timeout: API_TIMEOUT_MS, validateStatus: () => true,
+    });
+    if (response.status < 200 || response.status >= 300) throw errorFromResponse(response, 'RapidAPI download lookup failed');
+    const data = response.data || {};
+    const urls = [data.video_high, data.video_low].filter(isHttpUrl);
+    if (!urls.length) throw new Error('RapidAPI returned no MP4 links');
+    return { title: cleanText(data.title, 'XNXX video'), urls };
 }
 
 function looksLikeMp4(buffer, contentType = '') {
@@ -133,14 +112,14 @@ async function downloadMp4(url, referer = '') {
     }
     if (declaredLength > MAX_VIDEO_BYTES) {
         response.data?.destroy?.();
-        throw new Error('MP4 exceeds the 50 MB limit');
+        throw new Error('video exceeds the 50 MB limit');
     }
     const chunks = [];
     let total = 0;
     try {
         for await (const chunk of response.data) {
             total += chunk.length;
-            if (total > MAX_VIDEO_BYTES) throw new Error('MP4 exceeds the 50 MB limit');
+            if (total > MAX_VIDEO_BYTES) throw new Error('video exceeds the 50 MB limit');
             chunks.push(chunk);
         }
     } finally { response.data?.destroy?.(); }
@@ -158,49 +137,45 @@ async function downloadWithRetries(url, referer) {
             if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 750));
         }
     }
-    throw lastError || new Error('download failed');
-}
-
-async function resolveVideoPage(pageUrl) {
-    const html = await fetchPage(pageUrl);
-    const media = extractMediaUrls(html, pageUrl);
-    if (!media.length) throw new Error('No MP4 player URL found on page');
-    return { media, title: cleanText((html.match(/<title[^>]*>([\s\S]*?)<\/title>/i) || [])[1]) };
+    throw lastError || new Error('video download failed');
 }
 
 module.exports = {
     name: 'xvideos',
     aliases: ['xvideo', 'xv'],
-    description: 'Search and download an Xvideos video without an external API (18+)',
+    description: 'Search and download videos through RapidAPI (18+)',
     category: 'media',
     nsfw: true,
-    usage: '.xvideos <search text or Xvideos video URL>',
+    usage: '.xvideos <search text or video URL>',
 
     async execute({ sock, msg, from, reply, args, prefix }) {
         const px = prefixOf(prefix);
         const input = Array.isArray(args) ? args.join(' ').trim() : '';
-        if (!input) return reply(`🔞 *XVIDEOS SEARCH + DOWNLOAD*\n\nUsage: ${px}xvideos <search text or Xvideos video URL>\nExample: ${px}xvideos lady dimitrescu`);
-        if (input.startsWith('http') && !isXvideosUrl(input)) return reply('❌ Please provide an Xvideos URL or a search phrase.');
+        if (!input) return reply(`🔞 *XVIDEOS SEARCH + DOWNLOAD*\n\nUsage: ${px}xvideos <search text>\nExample: ${px}xvideos cat girl`);
+        if (!isConfigured()) return reply('❌ Xvideos is not configured: paste your RapidAPI key into RAPIDAPI_KEY in commands/media/xvideos.js.');
 
         try {
             await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } }).catch(() => {});
-            const search = isXvideosUrl(input) ? { pages: [input], source: input } : await searchVideos(input.slice(0, 120));
-            let foundLinks = [];
+            const searchResults = isHttpUrl(input)
+                ? [{ title: 'Video', videoLink: input, views: '', duration: '' }]
+                : await searchVideos(input.slice(0, 120));
+            const foundLinks = [];
             let lastError = null;
-            for (const pageUrl of search.pages) {
+
+            for (const result of searchResults) {
                 try {
-                    const page = await resolveVideoPage(pageUrl);
-                    foundLinks.push(...page.media);
-                    for (const mediaUrl of page.media) {
+                    const resolved = await getDownloadLinks(result.videoLink);
+                    foundLinks.push(...resolved.urls);
+                    for (const mediaUrl of resolved.urls) {
                         try {
-                            const buffer = await downloadWithRetries(mediaUrl, pageUrl);
-                            const title = page.title || 'Xvideos video';
-                            const safeName = title.replace(/[^a-z0-9]+/gi, '_').slice(0, 60) || 'sukuna_xvideos';
+                            const buffer = await downloadWithRetries(mediaUrl, result.videoLink);
+                            const title = resolved.title || result.title;
+                            const safeName = title.replace(/[^a-z0-9]+/gi, '_').slice(0, 60) || 'sukuna_video';
                             await sock.sendMessage(from, {
                                 video: buffer,
                                 mimetype: 'video/mp4',
                                 fileName: `${safeName}.mp4`,
-                                caption: `🔞 *${title}*\n\n🔗 Source: ${pageUrl}\n\n> SUKUNA MD • 18+`,
+                                caption: `🔞 *${title}*\n\n👁️ ${result.views || 'Unknown'}\n⏱️ ${result.duration || 'Unknown'}\n🔗 ${result.videoLink}\n\n> SUKUNA MD • RapidAPI`,
                             }, { quoted: msg });
                             await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
                             return;
@@ -208,27 +183,29 @@ module.exports = {
                     }
                 } catch (error) { lastError = error; }
             }
-            const links = [...new Set([...search.pages, ...foundLinks])].slice(0, 12);
+
+            const links = [...new Set([...searchResults.map(result => result.videoLink), ...foundLinks])].slice(0, 12);
             if (links.length) {
                 await sock.sendMessage(from, {
-                    text: `🔗 *XVIDEOS LINKS FOUND*\n\n${links.map((url, i) => `${i + 1}. ${url}`).join('\n')}\n\nThe page exposed links but the server did not return a playable MP4.`,
+                    text: `🔗 *VIDEO LINKS FOUND*\n\n${links.map((url, i) => `${i + 1}. ${url}`).join('\n')}\n\nThe API returned links, but none could be downloaded as a playable MP4.`,
                 }, { quoted: msg });
                 await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } }).catch(() => {});
                 return;
             }
-            throw lastError || new Error('No video links found');
+            throw lastError || new Error('No playable video was returned');
         } catch (error) {
             console.error('[xvideos] error:', error.message);
             await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
-            return reply('❌ Xvideos could not find a video page or playable MP4. Try another search.');
+            return reply('❌ Xvideos download failed: the RapidAPI search or video download was unsuccessful. Try another search.');
         }
     },
 };
 
-module.exports.searchUrl = searchUrl;
-module.exports.extractPageUrls = extractPageUrls;
-module.exports.extractMediaUrls = extractMediaUrls;
 module.exports.searchVideos = searchVideos;
+module.exports.getDownloadLinks = getDownloadLinks;
 module.exports.downloadMp4 = downloadMp4;
-module.exports.resolveVideoPage = resolveVideoPage;
+module.exports.normalizeSearchResult = normalizeSearchResult;
+module.exports.RAPIDAPI_BASE_URL = RAPIDAPI_BASE_URL;
+module.exports.SEARCH_ENDPOINT = SEARCH_ENDPOINT;
+module.exports.DOWNLOAD_ENDPOINT = DOWNLOAD_ENDPOINT;
 module.exports.MAX_VIDEO_BYTES = MAX_VIDEO_BYTES;
