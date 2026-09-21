@@ -249,7 +249,14 @@ module.exports = {
                     console.error(`[xvideos] candidate failed: ${error.message}`);
                 }
             }
-            if (!buffer || !chosen) throw lastError || new Error('No playable MP4 returned by Apify');
+            if (!buffer || !chosen) {
+                const links = result.urls.slice(0, 10).map((url, index) => `${index + 1}. ${url}`).join('\n');
+                await sock.sendMessage(from, {
+                    text: `🔗 *XVIDEOS LINKS FOUND*\n\n${links}\n\nNo playable MP4 could be downloaded automatically. Copy one of the links above and try it with .aio <link>.`,
+                }, { quoted: msg });
+                await sock.sendMessage(from, { react: { text: '⚠️', key: msg.key } }).catch(() => {});
+                return;
+            }
 
             const safeName = result.title.replace(/[^a-z0-9]+/gi, '_').slice(0, 60) || 'sukuna_xvideos';
             await sock.sendMessage(from, {
