@@ -97,16 +97,19 @@ function looksLikeVideo(buffer, contentType = '') {
     return buffer.length >= 12 && buffer.subarray(4, 8).toString('ascii') === 'ftyp';
 }
 
-async function downloadMp4(url) {
+async function downloadMp4(url, referer = '') {
     const response = await axios.get(url, {
         responseType: 'stream',
         timeout: DOWNLOAD_TIMEOUT_MS,
+        maxRedirects: 10,
         maxContentLength: MAX_VIDEO_BYTES,
         maxBodyLength: MAX_VIDEO_BYTES,
         validateStatus: () => true,
         headers: {
             'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/131 Safari/537.36',
             Accept: 'video/mp4,video/*,*/*;q=0.8',
+            'Accept-Encoding': 'identity',
+            ...(isHttpUrl(referer) ? { Referer: referer } : {}),
         },
     });
 
@@ -168,14 +171,18 @@ module.exports = {
             let lastError = null;
 
             for (const candidate of candidates) {
-                try {
-                    buffer = await downloadMp4(candidate.mp4);
-                    chosen = candidate;
-                    break;
-                } catch (error) {
-                    lastError = error;
-                    console.error(`[xvideos] candidate failed: ${error.message}`);
+                for (let attempt = 1; attempt <= 2; attempt += 1) {
+                    try {
+                        buffer = await downloadMp4(candidate.mp4, candidate.pageUrl);
+                        chosen = candidate;
+                        break;
+                    } catch (error) {
+                        lastError = error;
+                        console.error(`[xvideos] candidate failed (attempt ${attempt}): ${error.message}`);
+                        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 750));
+                    }
                 }
+                if (buffer) break;
             }
             if (!buffer || !chosen) throw lastError || new Error('No candidate could be downloaded');
 
