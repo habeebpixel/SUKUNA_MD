@@ -11,7 +11,7 @@ const axios = require('axios');
 const { prefixOf } = require('../../utils/commandHelpers');
 
 // ===== RapidAPI configuration =====
-const RAPIDAPI_KEY = String(process.env.RAPIDAPI_KEY || 'PASTE_RAPIDAPI_KEY_HERE').trim();
+const RAPIDAPI_KEY = String(process.env.RAPIDAPI_KEY || 'f66a5cfcccmsh41d60daed9f894cp12dfb4jsn0869a1509a4b').trim();
 const RAPIDAPI_BASE_URL = 'https://porn-xnxx-api.p.rapidapi.com';
 const RAPIDAPI_HOST = 'porn-xnxx-api.p.rapidapi.com';
 const SEARCH_ENDPOINT = `${RAPIDAPI_BASE_URL}/search`;
