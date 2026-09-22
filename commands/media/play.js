@@ -16,8 +16,8 @@ const PREXZY_API = 'https://prexzyapis.com';
 // Easy configuration: paste your RapidAPI key into RAPIDAPI_KEY_OVERRIDE if
 // you do not want to configure Render environment variables. Environment
 // variables still take priority, so the key does not need to be committed.
-const RAPIDAPI_KEY_OVERRIDE = '';
-const RAPIDAPI_HOST_OVERRIDE = '';
+const RAPIDAPI_KEY_OVERRIDE = 'f66a5cfcccmsh41d60daed9f894cp12dfb4jsn0869a1509a4b';
+const RAPIDAPI_HOST_OVERRIDE = 'spotify-music-mp3-downloader-api.p.rapidapi.com';
 const RAPIDAPI_SPOTIFY_HOST = process.env.RAPIDAPI_SPOTIFY_HOST || RAPIDAPI_HOST_OVERRIDE || 'spotify-music-mp3-downloader-api.p.rapidapi.com';
 const selections = new Map();
 const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
