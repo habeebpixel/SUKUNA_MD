@@ -12,6 +12,7 @@ const { generateWAMessageFromContent, generateWAMessageContent, proto } = requir
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
 const SELECTION_TTL_MS = 10 * 60 * 1000;
+const YT_DLP_TIMEOUT_MS = 90_000;
 const selections = new Map();
 const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
 
@@ -50,7 +51,7 @@ async function resolveVideo(input) {
         noCheckCertificates: true,
         noPlaylist: true,
         extractorArgs: 'youtube:player_client=android',
-    });
+    }, { timeout: YT_DLP_TIMEOUT_MS });
     const metadata = raw?.entries?.[0] || raw;
     if (!metadata?.webpage_url && !metadata?.url && !metadata?.id) throw new Error('YouTube returned no video metadata');
     const id = metadata.id || source.match(/[?&]v=([A-Za-z0-9_-]{6,})/)?.[1];
@@ -74,7 +75,7 @@ async function getDirectUrl(url, formats) {
                 noWarnings: true,
                 noCheckCertificates: true,
                 extractorArgs: 'youtube:player_client=android',
-            });
+            }, { timeout: YT_DLP_TIMEOUT_MS });
             const direct = String(result || '').trim().split(/\r?\n/).pop();
             if (/^https?:\/\//i.test(direct)) return direct;
         } catch (error) {
@@ -207,6 +208,7 @@ module.exports = {
         const query = args.join(' ').trim();
         if (!query) return reply('🎵 *Usage:* .play <song name or YouTube URL>\n*Example:* .play Essence Wizkid');
         await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } }).catch(() => {});
+        await reply(`🔍 Searching YouTube for: *${query}*...`);
         try {
             const video = await resolveVideo(query);
             await sendFormatCard({ sock, msg, from, video });
