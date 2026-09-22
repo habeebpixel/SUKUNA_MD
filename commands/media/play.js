@@ -126,15 +126,22 @@ async function getRapidSpotifyMedia(spotifyUrl) {
     const key = process.env.RAPIDAPI_KEY || process.env.RAPID_API_KEY || RAPIDAPI_KEY_OVERRIDE;
     if (!key) throw new Error('RAPIDAPI_KEY is not configured on the bot host');
     const endpoint = `https://${RAPIDAPI_SPOTIFY_HOST}/downloadMusic?link=${encodeURIComponent(spotifyUrl)}`;
-    const response = await fetch(endpoint, {
-        signal: AbortSignal.timeout(90_000),
-        headers: { 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': RAPIDAPI_SPOTIFY_HOST, Accept: 'application/json,*/*' },
-    });
+    let response;
+    try {
+        response = await fetch(endpoint, {
+            signal: AbortSignal.timeout(90_000),
+            headers: { 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': RAPIDAPI_SPOTIFY_HOST, Accept: 'application/json,*/*' },
+        });
+    } catch (error) {
+        throw new Error(`RapidAPI request failed: ${error.message}`);
+    }
     const type = String(response.headers.get('content-type') || '').toLowerCase();
     if (type.includes('audio/') || type.includes('application/octet-stream')) return { buffer: Buffer.from(await response.arrayBuffer()), mimetype: type.split(';')[0] || 'audio/mpeg' };
-    const payload = await response.json().catch(() => ({}));
+    const raw = await response.text();
+    let payload;
+    try { payload = JSON.parse(raw); } catch (_) { payload = {}; }
     if (!response.ok) throw new Error(payload.message || payload.error || `RapidAPI Spotify HTTP ${response.status}`);
-    const direct = payload.downloadUrl || payload.download_url || payload.url || payload.link || payload.data?.downloadUrl || payload.data?.download_url || payload.data?.url;
+    const direct = payload.downloadUrl || payload.download_url || payload.download || payload.url || payload.link || payload.data?.downloadUrl || payload.data?.download_url || payload.data?.download || payload.data?.url || payload.data?.link || (raw.trim().startsWith('http') ? raw.trim() : '');
     if (!/^https?:\/\//i.test(String(direct || ''))) throw new Error(payload.message || payload.error || 'RapidAPI returned no audio URL');
     return { url: direct };
 }
@@ -168,11 +175,16 @@ async function getDirectUrl(url, formats, type) {
 }
 
 async function fetchBuffer(url, maxBytes) {
-    const response = await fetch(url, {
-        redirect: 'follow',
-        signal: AbortSignal.timeout(90_000),
-        headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' },
-    });
+    let response;
+    try {
+        response = await fetch(url, {
+            redirect: 'follow',
+            signal: AbortSignal.timeout(90_000),
+            headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' },
+        });
+    } catch (error) {
+        throw new Error(`media URL request failed: ${error.message}`);
+    }
     if (!response.ok) throw new Error(`YouTube media HTTP ${response.status}`);
     const length = Number(response.headers.get('content-length') || 0);
     if (length > maxBytes) throw new Error('The selected media is too large for WhatsApp');
