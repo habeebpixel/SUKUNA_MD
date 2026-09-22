@@ -1,165 +1,241 @@
 'use strict';
 
-const axios = require('axios');
+const crypto = require('crypto');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { spawn } = require('child_process');
+const youtubeDl = require('youtube-dl-exec');
+const ffmpegPath = require('ffmpeg-static');
+const { generateWAMessageFromContent, generateWAMessageContent, proto } = require('@pasqua-baileys/baileys');
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
+const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
+const SELECTION_TTL_MS = 10 * 60 * 1000;
+const selections = new Map();
+const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
 
 function safeFileName(value) {
     return String(value || 'audio').replace(/[^a-z0-9 _-]/gi, '').trim().slice(0, 100) || 'audio';
 }
 
-async function fetchAudioBuffer(url) {
-    if (!/^https?:\/\//i.test(String(url || ''))) throw new Error('Provider returned an invalid audio URL');
-    const response = await axios.get(url, {
-        responseType: 'arraybuffer',
-        timeout: 60_000,
-        maxContentLength: MAX_AUDIO_BYTES,
-        maxRedirects: 6,
-        headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'audio/mpeg,audio/*,application/octet-stream;q=0.8,*/*;q=0.5' },
-        validateStatus: () => true,
+function normalizeYoutubeUrl(value) {
+    const input = String(value || '').trim();
+    const match = input.match(YOUTUBE_URL_RE);
+    return match ? `https://www.youtube.com/watch?v=${match[1]}` : input;
+}
+
+function rememberSelection(data) {
+    const id = crypto.randomBytes(6).toString('hex');
+    selections.set(id, { ...data, expiresAt: Date.now() + SELECTION_TTL_MS });
+    setTimeout(() => selections.delete(id), SELECTION_TTL_MS + 1000).unref?.();
+    return id;
+}
+
+function getSelection(id) {
+    const item = selections.get(id);
+    if (!item || item.expiresAt < Date.now()) {
+        selections.delete(id);
+        return null;
+    }
+    return item;
+}
+
+async function resolveVideo(input) {
+    const source = YOUTUBE_URL_RE.test(input) ? normalizeYoutubeUrl(input) : `ytsearch1:${input}`;
+    const raw = await youtubeDl(source, {
+        dumpSingleJson: true,
+        skipDownload: true,
+        noWarnings: true,
+        noCheckCertificates: true,
+        noPlaylist: true,
+        extractorArgs: 'youtube:player_client=android',
     });
-    const buffer = Buffer.from(response.data || '');
-    const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
-    if (response.status < 200 || response.status >= 300) throw new Error(`Audio download HTTP ${response.status}`);
-    if (!buffer.length || contentType.includes('text/html') || contentType.includes('application/json')) throw new Error('Provider returned an invalid audio response');
-    const mimetype = contentType.includes('audio/') ? contentType.split(';')[0] : 'audio/mpeg';
-    return { buffer, mimetype };
+    const metadata = raw?.entries?.[0] || raw;
+    if (!metadata?.webpage_url && !metadata?.url && !metadata?.id) throw new Error('YouTube returned no video metadata');
+    const id = metadata.id || source.match(/[?&]v=([A-Za-z0-9_-]{6,})/)?.[1];
+    const url = metadata.webpage_url || (id ? `https://www.youtube.com/watch?v=${id}` : source);
+    return {
+        url,
+        title: metadata.title || input,
+        author: metadata.uploader || metadata.channel || 'YouTube',
+        duration: metadata.duration_string || (metadata.duration ? `${Math.floor(metadata.duration / 60)}:${String(Math.floor(metadata.duration % 60)).padStart(2, '0')}` : ''),
+        thumbnail: metadata.thumbnail || '',
+    };
+}
+
+async function getDirectUrl(url, formats) {
+    let lastError;
+    for (const format of formats) {
+        try {
+            const result = await youtubeDl(url, {
+                getUrl: true,
+                format,
+                noWarnings: true,
+                noCheckCertificates: true,
+                extractorArgs: 'youtube:player_client=android',
+            });
+            const direct = String(result || '').trim().split(/\r?\n/).pop();
+            if (/^https?:\/\//i.test(direct)) return direct;
+        } catch (error) {
+            lastError = error;
+        }
+    }
+    throw lastError || new Error('YouTube did not return a downloadable format');
+}
+
+async function fetchBuffer(url, maxBytes) {
+    const response = await fetch(url, {
+        redirect: 'follow',
+        signal: AbortSignal.timeout(90_000),
+        headers: { 'User-Agent': 'Mozilla/5.0', Accept: '*/*' },
+    });
+    if (!response.ok) throw new Error(`YouTube media HTTP ${response.status}`);
+    const length = Number(response.headers.get('content-length') || 0);
+    if (length > maxBytes) throw new Error('The selected media is too large for WhatsApp');
+    const reader = response.body?.getReader();
+    if (!reader) throw new Error('YouTube returned an empty media stream');
+    const chunks = [];
+    let total = 0;
+    while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        total += value.byteLength;
+        if (total > maxBytes) {
+            await reader.cancel().catch(() => {});
+            throw new Error('The selected media is too large for WhatsApp');
+        }
+        chunks.push(Buffer.from(value));
+    }
+    return Buffer.concat(chunks, total);
+}
+
+async function convertToMp3(inputBuffer) {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sukuna-play-'));
+    const input = path.join(dir, 'input.media');
+    const output = path.join(dir, 'output.mp3');
+    fs.writeFileSync(input, inputBuffer, { mode: 0o600 });
+    try {
+        await new Promise((resolve, reject) => {
+            const child = spawn(ffmpegPath || 'ffmpeg', ['-y', '-i', input, '-vn', '-codec:a', 'libmp3lame', '-b:a', '128k', output], { stdio: ['ignore', 'ignore', 'pipe'] });
+            let errorText = '';
+            child.stderr.on('data', data => { errorText += data.toString().slice(-4000); });
+            child.once('error', reject);
+            child.once('close', code => code === 0 ? resolve() : reject(new Error(`MP3 conversion failed (${code}): ${errorText.slice(-500)}`)));
+        });
+        const result = fs.readFileSync(output);
+        if (!result.length || result.length > MAX_AUDIO_BYTES) throw new Error('Converted audio is too large for WhatsApp');
+        return result;
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
 }
 
 async function fetchThumbnailBuffer(url) {
     if (!/^https?:\/\//i.test(String(url || ''))) return null;
     try {
-        const response = await axios.get(url, {
-            responseType: 'arraybuffer',
-            timeout: 15_000,
-            maxContentLength: 5 * 1024 * 1024,
-            headers: { 'User-Agent': 'Mozilla/5.0', Accept: 'image/jpeg,image/*;q=0.8,*/*;q=0.5' },
-            validateStatus: () => true,
-        });
-        const contentType = String(response.headers?.['content-type'] || '').toLowerCase();
-        if (response.status >= 200 && response.status < 300 && contentType.includes('image/')) return Buffer.from(response.data);
-    } catch (error) {
-        console.warn('[play] thumbnail unavailable:', error.message);
+        const response = await fetch(url, { signal: AbortSignal.timeout(15_000), headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const type = String(response.headers.get('content-type') || '').toLowerCase();
+        if (!response.ok || !type.includes('image/')) return null;
+        const buffer = Buffer.from(await response.arrayBuffer());
+        return buffer.length <= 5 * 1024 * 1024 ? buffer : null;
+    } catch (_) { return null; }
+}
+
+function quickReply(displayText, id) {
+    return { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: displayText, id }) };
+}
+
+async function sendFormatCard({ sock, msg, from, video }) {
+    const token = rememberSelection(video);
+    const buttons = [quickReply('🎧 MP3', `play:mp3:${token}`), quickReply('🎬 MP4', `play:mp4:${token}`)];
+    const body = [
+        `🎬 *${video.title}*`,
+        video.author ? `👤 ${video.author}` : '',
+        video.duration ? `⏱️ ${video.duration}` : '',
+        '',
+        'Choose a format to download:',
+    ].filter(Boolean).join('\n');
+    const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
+    let header = { title: 'SUKUNA MD · PLAY', hasMediaAttachment: false };
+    if (thumbnail && sock.waUploadToServer) {
+        try {
+            const media = await generateWAMessageContent({ image: thumbnail }, { upload: sock.waUploadToServer });
+            if (media?.imageMessage) header = { title: 'SUKUNA MD · PLAY', hasMediaAttachment: true, imageMessage: media.imageMessage };
+        } catch (error) { console.error('[play card image]', error.message); }
     }
-    return null;
+    try {
+        const interactive = proto.Message.InteractiveMessage.fromObject({
+            body: { text: body },
+            footer: { text: 'Powered by SUKUNA MD' },
+            header,
+            nativeFlowMessage: { buttons, messageParamsJson: '' },
+        });
+        // This Baileys fork expects a protobuf Message here; passing a plain
+        // viewOnce object makes generateWAMessageFromContent lose the type.
+        const wrapped = generateWAMessageFromContent(from, proto.Message.create({ interactiveMessage: interactive }), { userJid: sock.user?.id, quoted: msg });
+        await sock.relayMessage(from, wrapped.message, { messageId: wrapped.key.id });
+        return true;
+    } catch (error) {
+        console.error('[play card]', error.message);
+        if (thumbnail) await sock.sendMessage(from, { image: thumbnail, caption: `${body}\n\nReply with .play <same title> to try again.` }, { quoted: msg });
+        else await sock.sendMessage(from, { text: body }, { quoted: msg });
+        return false;
+    }
+}
+
+async function downloadAndSend({ sock, msg, from, selection, type }) {
+    const title = selection.title || 'audio';
+    const source = await getDirectUrl(selection.url, type === 'mp3' ? ['18', 'best'] : ['18', 'best[height<=360]', 'best']);
+    const sourceBuffer = await fetchBuffer(source, type === 'mp3' ? MAX_AUDIO_BYTES : MAX_VIDEO_BYTES);
+    if (type === 'mp3') {
+        const audio = await convertToMp3(sourceBuffer);
+        await sock.sendMessage(from, { audio, mimetype: 'audio/mpeg', fileName: `${safeFileName(title)}.mp3`, ptt: false }, { quoted: msg });
+    } else {
+        await sock.sendMessage(from, { video: sourceBuffer, mimetype: 'video/mp4', fileName: `${safeFileName(title)}.mp4`, caption: `🎬 *${title}*\n\n> SUKUNA MD` }, { quoted: msg });
+    }
 }
 
 module.exports = {
     name: 'play',
     aliases: ['song', 'music', 'audio'],
-    description: 'Search and download a song as audio',
+    description: 'Search YouTube and choose MP3 or MP4 download format',
     usage: '.play <song name or URL>',
     category: 'media',
 
-    async execute({ sock, msg, from, args, reply, t }) {
-        const tr = t || ((key, vars) => {
-            const fallbacks = {
-                'play.noQuery': '🎵 *Usage:* .play <song name>\n*Example:* .play Essence Wizkid',
-                'play.searching': '🔍 Searching: *' + (vars?.query || '') + '*...',
-                'play.downloading': '⬇️ Downloading: *' + (vars?.title || '') + '*...',
-                'play.notFound': '❌ Could not find: *' + (vars?.query || '') + '*',
-                'play.downloadFail': '❌ Download failed.',
-                'play.success': '✅ *' + (vars?.title || '') + '*\n🎵 Enjoy!',
-                'play.thumbCaption': '🎵 *' + (vars?.title || '') + '*',
-            };
-            return fallbacks[key] || key;
-        });
-
+    async execute({ sock, msg, from, args, reply }) {
         const query = args.join(' ').trim();
-        if (!query) {
-            return reply(tr('play.noQuery'));
+        if (!query) return reply('🎵 *Usage:* .play <song name or YouTube URL>\n*Example:* .play Essence Wizkid');
+        await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } }).catch(() => {});
+        try {
+            const video = await resolveVideo(query);
+            await sendFormatCard({ sock, msg, from, video });
+            await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
+        } catch (error) {
+            console.error('[play] resolve error:', error.stderr || error.message);
+            await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
+            return reply('❌ I could not find or prepare that YouTube media right now. Try another title or link.');
         }
+    },
 
-        await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } }).catch(() => {});
-
-        const strategies = [
-            // Strategy 1: Primary API provided by user
-            async () => {
-                const { data } = await axios.get(`https://apis.davidcyril.name.ng/play?query=${encodeURIComponent(query)}`, { timeout: 30000 });
-                if (data.status && data.result?.download_url) {
-                    return {
-                        url: data.result.download_url,
-                        title: data.result.title,
-                        thumbnail: data.result.thumbnail,
-                        duration: data.result.duration,
-                        author: data.result.author || data.result.artist || data.result.channel || 'YouTube',
-                        sourceUrl: data.result.url || ''
-                    };
-                }
-                throw new Error('Primary API failed');
-            },
-            // Strategy 2: Fallback search + ytmp3 from same provider
-            async () => {
-                const searchRes = await axios.get(`https://apis.davidcyril.name.ng/youtube/search?query=${encodeURIComponent(query)}`, { timeout: 15000 });
-                const video = searchRes.data?.results?.[0];
-                if (!video?.url) throw new Error('Search failed');
-
-                const dlRes = await axios.get(`https://apis.davidcyril.name.ng/download/ytmp3?url=${encodeURIComponent(video.url)}`, { timeout: 30000 });
-                if (dlRes.data.success && dlRes.data.result?.download_url) {
-                    return {
-                        url: dlRes.data.result.download_url,
-                        title: video.title,
-                        thumbnail: video.thumbnail,
-                        duration: video.duration,
-                        author: video.author || 'YouTube',
-                        sourceUrl: video.url
-                    };
-                }
-                throw new Error('Secondary API failed');
-            },
-            // Strategy 3: Another free API (agatz.xyz)
-            async () => {
-                const { data } = await axios.get(`https://api.agatz.xyz/api/ytmp3?url=${encodeURIComponent(query)}`, { timeout: 30000 }).catch(() => ({ data: {} }));
-                if (data.status === 200 && data.data?.downloadUrl) {
-                    return {
-                        url: data.data.downloadUrl,
-                        title: data.data.title || query,
-                        thumbnail: data.data.thumbnail,
-                        duration: data.data.duration,
-                        author: data.data.author || data.data.artist || data.data.channel || 'YouTube',
-                        sourceUrl: data.data.url || query
-                    };
-                }
-                throw new Error('Agatz API failed');
-            }
-        ];
-
-        for (const strategy of strategies) {
-            try {
-                const res = await strategy();
-                if (res?.url) {
-                    const downloadedAudio = await fetchAudioBuffer(res.url);
-                    const audioBuffer = downloadedAudio.buffer;
-                    const audioMimetype = downloadedAudio.mimetype;
-                    const thumbnailBuffer = await fetchThumbnailBuffer(res.thumbnail);
-                    const title = res.title || query;
-                    const author = res.author || 'YouTube';
-                    const duration = res.duration || '';
-                    if (thumbnailBuffer) {
-                        await sock.sendMessage(from, {
-                            image: thumbnailBuffer,
-                            caption: `🎵 *${title}*\n👤 ${author}${duration ? `\n⏱️ ${duration}` : ''}`,
-                        }, { quoted: msg });
-                    }
-
-                    const audioMessage = {
-                        audio: audioBuffer,
-                        mimetype: audioMimetype,
-                        fileName: `${safeFileName(title)}${audioMimetype.includes('mpeg') ? '.mp3' : '.audio'}`,
-                        ptt: false,
-                    };
-                    await sock.sendMessage(from, audioMessage, { quoted: msg });
-
-                    await sock.sendMessage(from, { react: { text: '✅', key: msg.key } });
-                    return;
-                }
-            } catch (e) {
-                console.error('Strategy failed:', e.message);
-                continue;
-            }
+    async handleButton(buttonId, { sock, msg, from }) {
+        const match = String(buttonId || '').match(/^play:(mp3|mp4):([a-f0-9]{12})$/i);
+        if (!match) return false;
+        const [, type, token] = match;
+        const selection = getSelection(token);
+        if (!selection) {
+            await sock.sendMessage(from, { text: '⏳ This download choice expired. Run `.play <song>` again.' }, { quoted: msg });
+            return true;
         }
-
-        await sock.sendMessage(from, { react: { text: '❌', key: msg.key } });
-        return reply(tr('play.notFound', { query }));
-    }
+        await sock.sendMessage(from, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
+        try {
+            await downloadAndSend({ sock, msg, from, selection, type });
+            await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
+        } catch (error) {
+            console.error(`[play ${type}] download error:`, error.stderr || error.message);
+            await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
+            await sock.sendMessage(from, { text: `❌ ${type.toUpperCase()} download failed. Try the other format or run .play again.` }, { quoted: msg });
+        }
+        return true;
+    },
 };
