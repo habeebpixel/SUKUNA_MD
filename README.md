@@ -27,7 +27,7 @@
   </a>
 </p>
 
-<p align="center"><strong>Pair your WhatsApp device:</strong> <a href="https://pair-site-wmte.onrender.com">pair-site-wmte.onrender.com</a></p>
+<p align="center"><strong>Pair your WhatsApp device:</strong> Server 1 <a href="https://pair-site-wmte.onrender.com">pair-site-wmte.onrender.com</a> · Server 2 (backup) <a href="https://pair-site-91ob.onrender.com">pair-site-91ob.onrender.com</a></p>
 
 ---
 
@@ -253,7 +253,7 @@ SUKUNA MD starts with `npm start`, which runs `node index.js`. The repository in
 
 ### Render
 
-Create a **Web Service** from this repository. Use `npm install --omit=dev --no-audit --no-fund` as the build command and `npm start` as the start command. Add `PAIR_NUMBER`, `OWNER_NUMBER`, and either `SESSION_ID` or the normal pairing settings in Render Environment. `PAIR_SITE_URL` defaults to `https://pair-site-wmte.onrender.com`, so it is optional unless you use a different pair site. Render’s environment settings should be used for private values rather than committing them to the repository.
+Create a **Web Service** from this repository. Use `npm install --omit=dev --no-audit --no-fund` as the build command and `npm start` as the start command. Add `PAIR_NUMBER`, `OWNER_NUMBER`, and either `SESSION_ID` or the normal pairing settings in Render Environment. Session recovery checks Server 1 (`https://pair-site-wmte.onrender.com`) first and Server 2 (`https://pair-site-91ob.onrender.com`) second. Optional `PAIR_SITE_URL`, `PAIR_SITE_FALLBACK_URL`, or comma-separated `PAIR_SITE_URLS` values can add compatible sites. Render’s environment settings should be used for private values rather than committing them to the repository.
 
 ### Heroku
 
@@ -267,4 +267,4 @@ Open [Spaceify Client](https://client.spaceify.eu), create a Node.js deployment 
 
 ### Short session IDs
 
-The pair site stores the complete auth bundle in Upstash and sends a short `Pasqua~...` value. `SUKUNA_MD` resolves that value through the pair site, restores all auth files, and then starts the WhatsApp session. The Redis URL and token belong only in the pair-site host’s private environment; they must not be copied into downloaded bot scripts or committed to GitHub.
+The pair site stores the complete auth bundle in Upstash and sends a short `Pasqua~...` value. `SUKUNA_MD` checks the primary pair site first, then the backup pair site if the primary is unavailable or does not contain the token, restores all auth files, and then starts the WhatsApp session. The Redis URL and token belong only in the pair-site host’s private environment; they must not be copied into downloaded bot scripts or committed to GitHub.

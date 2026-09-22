@@ -69,7 +69,7 @@ function buildKnowledge(commandLoader) {
   // can have 1,000+ commands, which creates a 50k+ character prompt and makes
   // otherwise normal chat requests fail at the provider context limit.
   const catalog = rows.join('\n').slice(0, 9000);
-  return `Pasqua is the heart of SUKUNA MD. Pasqua was created by Pasqua. Current version: 3.0.0. Total registered commands: ${commands.length}. Pair site: https://pair-site-wmte.onrender.com. Pair steps: open the link, enter your number, get the session ID, then add SESSION_ID and PAIR_NUMBER to the deployment. The command router handles common commands before AI; use this compact command reference only when explaining capabilities:\n${catalog}`;
+  return `Pasqua is the heart of SUKUNA MD. Pasqua was created by Pasqua. Current version: 3.0.0. Total registered commands: ${commands.length}. Pair Server 1: https://pair-site-wmte.onrender.com; backup Server 2: https://pair-site-91ob.onrender.com. Pair steps: open either link, enter your number, get the session ID, then add SESSION_ID and PAIR_NUMBER to the deployment. The command router handles common commands before AI; use this compact command reference only when explaining capabilities:\n${catalog}`;
 }
 
 function routeNaturalLanguage(text) {

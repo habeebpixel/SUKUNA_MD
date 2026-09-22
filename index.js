@@ -21,6 +21,7 @@ const commandLoader  = require('./utils/commandLoader');
 const config         = require('./config');
 const sessionManager = require('./lib/sessionManager');
 const { restoreSessionBase64, decodeBase64Session, isBundle } = require('./utils/sessionBundle');
+const { getPairSiteUrls } = require('./utils/pairSites');
 
 const healthPort = Number(process.env.PORT || 3000);
 const webPairRequests = new Set();
@@ -139,31 +140,43 @@ async function main() {
                 // 6–128 alphanumeric characters and returns the one-time auth
                 // bundle from /pair/session/:token/consume.
                 if (/^[A-Za-z0-9_-]{6,128}$/.test(markedPayload)) {
-                    const pairSiteUrl = (process.env.PAIR_SITE_URL || 'https://pair-site-wmte.onrender.com').toString().trim().replace(/\/$/, '');
-                    if (!pairSiteUrl) throw new Error('PAIR_SITE_URL is required for Pasqua~ short IDs');
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 15000);
-                    try {
-                        const response = await fetch(`${pairSiteUrl}/pair/session/${encodeURIComponent(markedPayload)}/consume`, {
-                            signal: controller.signal,
-                            headers: { Accept: 'application/json', 'User-Agent': 'SukunaMD/3.0' },
-                        });
-                        const remotePayload = await response.json().catch(() => ({}));
-                        if (!response.ok) {
-                            const reason = remotePayload.error || remotePayload.message || `HTTP ${response.status}`;
-                            throw new Error(`PAIR_SITE ${reason}`);
+                    const pairSiteUrls = getPairSiteUrls();
+                    let lastPairSiteError;
+                    for (const pairSiteUrl of pairSiteUrls) {
+                        const controller = new AbortController();
+                        const timeout = setTimeout(() => controller.abort(), 15000);
+                        try {
+                            console.log(chalk.gray(`[SESSION] Checking pair site ${pairSiteUrl}`));
+                            const response = await fetch(`${pairSiteUrl}/pair/session/${encodeURIComponent(markedPayload)}/consume`, {
+                                signal: controller.signal,
+                                headers: { Accept: 'application/json', 'User-Agent': 'SukunaMD/3.0' },
+                            });
+                            const remotePayload = await response.json().catch(() => ({}));
+                            if (!response.ok) {
+                                const reason = remotePayload.error || remotePayload.message || `HTTP ${response.status}`;
+                                throw new Error(`HTTP ${response.status}: ${reason}`);
+                            }
+                            const recovered = remotePayload.session
+                                || remotePayload.sessionId
+                                || remotePayload.session_id
+                                || remotePayload.data?.session
+                                || remotePayload.data?.sessionId
+                                || remotePayload.payload;
+                            if (!recovered || typeof recovered !== 'string') {
+                                throw new Error('response did not contain SESSION_ID/session data');
+                            }
+                            sessionBase64 = recovered;
+                            console.log(chalk.green(`[SESSION] Recovered SESSION_ID from ${pairSiteUrl}`));
+                            break;
+                        } catch (error) {
+                            lastPairSiteError = error;
+                            console.log(chalk.yellow(`[SESSION] Pair site unavailable or token not found at ${pairSiteUrl}: ${error.message}`));
+                        } finally {
+                            clearTimeout(timeout);
                         }
-                        sessionBase64 = remotePayload.session
-                            || remotePayload.sessionId
-                            || remotePayload.session_id
-                            || remotePayload.data?.session
-                            || remotePayload.data?.sessionId
-                            || remotePayload.payload;
-                        if (!sessionBase64 || typeof sessionBase64 !== 'string') {
-                            throw new Error('PAIR_SITE response did not contain SESSION_ID/session data');
-                        }
-                    } finally {
-                        clearTimeout(timeout);
+                    }
+                    if (!sessionBase64 || sessionBase64 === sessionIdRaw) {
+                        throw new Error(`SESSION_ID was not found on any configured pair site${lastPairSiteError ? ` (${lastPairSiteError.message})` : ''}`);
                     }
                 } else {
                     sessionBase64 = markedPayload;
@@ -220,7 +233,7 @@ async function main() {
             console.log(chalk.red(`[SESSION] Invalid SESSION_ID (${e.message}).`));
             if (/^Pasqua~/i.test(sessionIdRaw)) {
                 console.log(chalk.yellow('[SESSION] For the current pair site, use Generate Script → Redis session token, not the temporary Pair Code display.'));
-                console.log(chalk.yellow('[SESSION] Set SESSION_ID=Pasqua~<token>, PAIR_NUMBER=<number>, and PAIR_SITE_URL=https://pair-site-wmte.onrender.com.'));
+                console.log(chalk.yellow('[SESSION] Set SESSION_ID=Pasqua~<token> and PAIR_NUMBER=<number>. Recovery checks both configured pair sites.'));
             }
             console.log(chalk.yellow('[SESSION] Falling back to pair-code flow.'));
             sessionIdUsed = false;

@@ -7,8 +7,9 @@ module.exports = {
     category: 'admin',
 
     async execute({ sock, msg, from, reply }) {
-        const PAIR_URL  = 'https://pair-site-wmte.onrender.com/';
-        const PREVIEW   = `https://api.microlink.io/?url=${encodeURIComponent(PAIR_URL)}&screenshot=true&meta=false&embed=screenshot.url`;
+        const PRIMARY_PAIR_URL = 'https://pair-site-wmte.onrender.com/';
+        const SECONDARY_PAIR_URL = 'https://pair-site-91ob.onrender.com/';
+        const PREVIEW   = `https://api.microlink.io/?url=${encodeURIComponent(PRIMARY_PAIR_URL)}&screenshot=true&meta=false&embed=screenshot.url`;
 
         const card =
             `╭─❒ ◈ 𝙎𝙐𝙆𝙐᳇𝘼 𝗗𝗘𝗣𝗟𝗢𝗬 ❒\n` +
@@ -20,8 +21,12 @@ module.exports = {
             `│  📌 *Step 3:* Scan/paste the pairing code\n` +
             `│  📌 *Step 4:* Your bot is live! 🎉\n` +
             `│\n` +
-            `│  🔗 *Pairing Link:*\n` +
-            `│  ${PAIR_URL}\n` +
+            `│  🔗 *Server 1 (primary):*\n` +
+            `│  ${PRIMARY_PAIR_URL}\n` +
+            `│\n` +
+            `│  🔗 *Server 2 (backup):*\n` +
+            `│  ${SECONDARY_PAIR_URL}\n` +
+            `│  _Use Server 2 if Server 1 is unavailable._\n` +
             `│\n` +
             `│  ⚡ _Powered by 𝙎𝙐𝙆𝙐᳇𝘼_\n` +
             `│  📩 t.me/Pasquaking\n` +

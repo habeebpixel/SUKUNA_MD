@@ -21,6 +21,11 @@
       "description": "Pair-site URL used to redeem Pasqua session IDs",
       "value": "https://pair-site-wmte.onrender.com",
       "required": false
+    },
+    "PAIR_SITE_FALLBACK_URL": {
+      "description": "Backup pair-site URL checked when the primary is unavailable or does not contain the token",
+      "value": "https://pair-site-91ob.onrender.com",
+      "required": false
     }
   }
 }
