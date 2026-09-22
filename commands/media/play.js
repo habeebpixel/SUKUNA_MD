@@ -13,6 +13,7 @@ const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
 const SELECTION_TTL_MS = 10 * 60 * 1000;
 const YT_DLP_TIMEOUT_MS = 90_000;
 const PREXZY_API = 'https://prexzyapis.com';
+const ELITE_API = 'https://eliteprotech-apis.zone.id';
 // Easy configuration: paste your RapidAPI key into RAPIDAPI_KEY_OVERRIDE if
 // you do not want to configure Render environment variables. Environment
 // variables still take priority, so the key does not need to be committed.
@@ -67,6 +68,28 @@ async function prexzyJson(pathname, params) {
     return payload;
 }
 
+async function eliteJson(pathname, params) {
+    const url = new URL(`${ELITE_API}${pathname}`);
+    for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, String(value));
+    const response = await fetch(url, { signal: AbortSignal.timeout(60_000), headers: { Accept: 'application/json', 'User-Agent': 'SUKUNA-MD/3.0' } });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.success === false || payload.status === false) throw new Error(payload.error || payload.message || `EliteProTech HTTP ${response.status}`);
+    return payload;
+}
+
+async function resolveWithElite(query) {
+    const payload = await eliteJson('/search/ytsearch', { q: query });
+    const result = payload.results?.videos?.[0];
+    if (!result?.url) throw new Error('EliteProTech returned no YouTube result');
+    return {
+        url: normalizeYoutubeUrl(result.url),
+        title: result.title || query,
+        author: result.author?.name || 'YouTube',
+        duration: result.duration || '',
+        thumbnail: result.thumbnail || '',
+    };
+}
+
 async function resolveWithPrexzy(query) {
     const apple = await prexzyJson('/search/applemusic', { q: query });
     const appleTrack = (apple.data || []).find(item => /music\.apple\.com/i.test(item.link || '') && /[?&]i=/.test(item.link || '')) || apple.data?.[0];
@@ -90,13 +113,16 @@ async function resolveSpotify(input) {
     const title = String(data.title).trim();
     const author = String(data.author_name || 'Spotify').trim();
     let video = {};
-    try { video = await resolveWithPrexzy(`${title} ${author}`); } catch (_) {}
+    try { video = await resolveWithElite(`${title} ${author}`); }
+    catch (_) { try { video = await resolveWithPrexzy(`${title} ${author}`); } catch (_) {} }
     return { ...video, spotifyUrl: input, title, author, thumbnail: data.thumbnail_url || video.thumbnail || '' };
 }
 
 async function resolveVideo(input) {
     if (SPOTIFY_URL_RE.test(input)) return resolveSpotify(input);
     if (!YOUTUBE_URL_RE.test(input)) {
+        try { return await resolveWithElite(input); }
+        catch (error) { console.warn('[play] EliteProTech search failed:', error.message); }
         try { return await resolveWithPrexzy(input); }
         catch (error) { console.warn('[play] Prexzy search failed:', error.message); }
     }
@@ -148,6 +174,15 @@ async function getRapidSpotifyMedia(spotifyUrl) {
 
 async function getDirectUrl(url, formats, type) {
     let lastError;
+    try {
+        const payload = await eliteJson(`/download/${type === 'mp3' ? 'ytmp3' : 'ytmp4'}`, { url });
+        const direct = payload.download?.downloadUrl || payload.result?.url || payload.downloadUrl || payload.url;
+        if (/^https?:\/\//i.test(String(direct || ''))) return direct;
+        throw new Error('EliteProTech returned no media URL');
+    } catch (error) {
+        lastError = error;
+        console.warn('[play] EliteProTech download failed:', error.message);
+    }
     try {
         const payload = await prexzyJson(type === 'mp3' ? '/download/ytmp3' : '/download/ytmp4', { url });
         if (/^https?:\/\//i.test(payload.download_url || '')) return payload.download_url;
