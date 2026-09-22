@@ -12,6 +12,7 @@ const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
 const SELECTION_TTL_MS = 10 * 60 * 1000;
 const YT_DLP_TIMEOUT_MS = 90_000;
+const PREXZY_API = 'https://prexzyapis.com';
 const selections = new Map();
 const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
 let youtubeDl;
@@ -47,7 +48,39 @@ function getSelection(id) {
     return item;
 }
 
+async function prexzyJson(pathname, params) {
+    const url = new URL(`${PREXZY_API}${pathname}`);
+    for (const [key, value] of Object.entries(params || {})) url.searchParams.set(key, String(value));
+    const response = await fetch(url, {
+        signal: AbortSignal.timeout(45_000),
+        headers: { Accept: 'application/json', 'User-Agent': 'SUKUNA-MD/3.0' },
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok || payload.status === false) throw new Error(payload.error || `Prexzy HTTP ${response.status}`);
+    return payload;
+}
+
+async function resolveWithPrexzy(query) {
+    const apple = await prexzyJson('/search/applemusic', { q: query });
+    const appleTrack = (apple.data || []).find(item => /music\.apple\.com/i.test(item.link || '') && /[?&]i=/.test(item.link || '')) || apple.data?.[0];
+    const searchText = [appleTrack?.title, String(appleTrack?.artist || '').replace(/^Song\s*[·-]\s*/i, '')].filter(Boolean).join(' ') || query;
+    const youtube = await prexzyJson('/search/youtube', { q: searchText });
+    const result = (youtube.data || []).find(item => /youtube\.com|youtu\.be/i.test(item.link || ''));
+    if (!result?.link) throw new Error('Prexzy returned no YouTube result');
+    return {
+        url: normalizeYoutubeUrl(result.link),
+        title: result.title || appleTrack?.title || query,
+        author: result.channel || appleTrack?.artist || 'YouTube',
+        duration: result.duration || '',
+        thumbnail: result.imageUrl || appleTrack?.image || '',
+    };
+}
+
 async function resolveVideo(input) {
+    if (!YOUTUBE_URL_RE.test(input)) {
+        try { return await resolveWithPrexzy(input); }
+        catch (error) { console.warn('[play] Prexzy search failed:', error.message); }
+    }
     const source = YOUTUBE_URL_RE.test(input) ? normalizeYoutubeUrl(input) : `ytsearch1:${input}`;
     const raw = await getYoutubeDl()(source, {
         dumpSingleJson: true,
@@ -70,8 +103,16 @@ async function resolveVideo(input) {
     };
 }
 
-async function getDirectUrl(url, formats) {
+async function getDirectUrl(url, formats, type) {
     let lastError;
+    try {
+        const payload = await prexzyJson(type === 'mp3' ? '/download/ytmp3' : '/download/ytmp4', { url });
+        if (/^https?:\/\//i.test(payload.download_url || '')) return payload.download_url;
+        throw new Error('Prexzy returned no download URL');
+    } catch (error) {
+        lastError = error;
+        console.warn('[play] Prexzy download failed:', error.message);
+    }
     for (const format of formats) {
         try {
             const result = await getYoutubeDl()(url, {
@@ -192,7 +233,7 @@ async function sendFormatCard({ sock, msg, from, video }) {
 
 async function downloadAndSend({ sock, msg, from, selection, type }) {
     const title = selection.title || 'audio';
-    const source = await getDirectUrl(selection.url, type === 'mp3' ? ['18', 'best'] : ['18', 'best[height<=360]', 'best']);
+    const source = await getDirectUrl(selection.url, type === 'mp3' ? ['18', 'best'] : ['18', 'best[height<=360]', 'best'], type);
     const sourceBuffer = await fetchBuffer(source, type === 'mp3' ? MAX_AUDIO_BYTES : MAX_VIDEO_BYTES);
     if (type === 'mp3') {
         const audio = await convertToMp3(sourceBuffer);
