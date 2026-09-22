@@ -13,8 +13,10 @@ const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
 const SELECTION_TTL_MS = 10 * 60 * 1000;
 const YT_DLP_TIMEOUT_MS = 90_000;
 const PREXZY_API = 'https://prexzyapis.com';
+const RAPIDAPI_SPOTIFY_HOST = process.env.RAPIDAPI_SPOTIFY_HOST || 'spotify-music-mp3-downloader-api.p.rapidapi.com';
 const selections = new Map();
 const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
+const SPOTIFY_URL_RE = /^https?:\/\/open\.spotify\.com\/track\/[A-Za-z0-9]+/i;
 let youtubeDl;
 
 function getYoutubeDl() {
@@ -76,7 +78,19 @@ async function resolveWithPrexzy(query) {
     };
 }
 
+async function resolveSpotify(input) {
+    const response = await fetch(`https://open.spotify.com/oembed?url=${encodeURIComponent(input)}`, { signal: AbortSignal.timeout(20_000) });
+    const data = await response.json();
+    if (!response.ok || !data.title) throw new Error('Spotify metadata lookup failed');
+    const title = String(data.title).trim();
+    const author = String(data.author_name || 'Spotify').trim();
+    let video = {};
+    try { video = await resolveWithPrexzy(`${title} ${author}`); } catch (_) {}
+    return { ...video, spotifyUrl: input, title, author, thumbnail: data.thumbnail_url || video.thumbnail || '' };
+}
+
 async function resolveVideo(input) {
+    if (SPOTIFY_URL_RE.test(input)) return resolveSpotify(input);
     if (!YOUTUBE_URL_RE.test(input)) {
         try { return await resolveWithPrexzy(input); }
         catch (error) { console.warn('[play] Prexzy search failed:', error.message); }
@@ -101,6 +115,23 @@ async function resolveVideo(input) {
         duration: metadata.duration_string || (metadata.duration ? `${Math.floor(metadata.duration / 60)}:${String(Math.floor(metadata.duration % 60)).padStart(2, '0')}` : ''),
         thumbnail: metadata.thumbnail || '',
     };
+}
+
+async function getRapidSpotifyMedia(spotifyUrl) {
+    const key = process.env.RAPIDAPI_KEY || process.env.RAPID_API_KEY;
+    if (!key) throw new Error('RAPIDAPI_KEY is not configured on the bot host');
+    const endpoint = `https://${RAPIDAPI_SPOTIFY_HOST}/downloadMusic?link=${encodeURIComponent(spotifyUrl)}`;
+    const response = await fetch(endpoint, {
+        signal: AbortSignal.timeout(90_000),
+        headers: { 'X-RapidAPI-Key': key, 'X-RapidAPI-Host': RAPIDAPI_SPOTIFY_HOST, Accept: 'application/json,*/*' },
+    });
+    const type = String(response.headers.get('content-type') || '').toLowerCase();
+    if (type.includes('audio/') || type.includes('application/octet-stream')) return { buffer: Buffer.from(await response.arrayBuffer()), mimetype: type.split(';')[0] || 'audio/mpeg' };
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(payload.message || payload.error || `RapidAPI Spotify HTTP ${response.status}`);
+    const direct = payload.downloadUrl || payload.download_url || payload.url || payload.link || payload.data?.downloadUrl || payload.data?.download_url || payload.data?.url;
+    if (!/^https?:\/\//i.test(String(direct || ''))) throw new Error(payload.message || payload.error || 'RapidAPI returned no audio URL');
+    return { url: direct };
 }
 
 async function getDirectUrl(url, formats, type) {
@@ -233,6 +264,12 @@ async function sendFormatCard({ sock, msg, from, video }) {
 
 async function downloadAndSend({ sock, msg, from, selection, type }) {
     const title = selection.title || 'audio';
+    if (type === 'mp3' && selection.spotifyUrl) {
+        const rapid = await getRapidSpotifyMedia(selection.spotifyUrl);
+        const audio = rapid.buffer || await fetchBuffer(rapid.url, MAX_AUDIO_BYTES);
+        await sock.sendMessage(from, { audio, mimetype: rapid.mimetype || 'audio/mpeg', fileName: `${safeFileName(title)}.mp3`, ptt: false }, { quoted: msg });
+        return;
+    }
     const source = await getDirectUrl(selection.url, type === 'mp3' ? ['18', 'best'] : ['18', 'best[height<=360]', 'best'], type);
     const sourceBuffer = await fetchBuffer(source, type === 'mp3' ? MAX_AUDIO_BYTES : MAX_VIDEO_BYTES);
     if (type === 'mp3') {
@@ -282,7 +319,7 @@ module.exports = {
         } catch (error) {
             console.error(`[play ${type}] download error:`, error.stderr || error.message);
             await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
-            await sock.sendMessage(from, { text: `❌ ${type.toUpperCase()} download failed. Try the other format or run .play again.` }, { quoted: msg });
+            await sock.sendMessage(from, { text: `❌ ${type.toUpperCase()} download failed: ${String(error.message || 'unknown error').slice(0, 220)}` }, { quoted: msg });
         }
         return true;
     },
