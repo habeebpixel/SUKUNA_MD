@@ -6,7 +6,6 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
-const { generateWAMessageFromContent, generateWAMessageContent, proto } = require('@pasqua-baileys/baileys');
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
@@ -272,13 +271,7 @@ async function fetchThumbnailBuffer(url) {
     } catch (_) { return null; }
 }
 
-function quickReply(displayText, id) {
-    return { name: 'quick_reply', buttonParamsJson: JSON.stringify({ display_text: displayText, id }) };
-}
-
 async function sendFormatCard({ sock, msg, from, video }) {
-    const token = rememberSelection(video);
-    const buttons = [quickReply('🎧 MP3', `play:mp3:${token}`), quickReply('🎬 MP4', `play:mp4:${token}`)];
     const body = [
         `🎬 *${video.title}*`,
         video.author ? `👤 ${video.author}` : '',
@@ -287,24 +280,20 @@ async function sendFormatCard({ sock, msg, from, video }) {
         'Choose a format to download:',
     ].filter(Boolean).join('\n');
     const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
-    let header = { title: 'SUKUNA MD · PLAY', hasMediaAttachment: false };
-    if (thumbnail && sock.waUploadToServer) {
-        try {
-            const media = await generateWAMessageContent({ image: thumbnail }, { upload: sock.waUploadToServer });
-            if (media?.imageMessage) header = { title: 'SUKUNA MD · PLAY', hasMediaAttachment: true, imageMessage: media.imageMessage };
-        } catch (error) { console.error('[play card image]', error.message); }
-    }
+    const sourceUrl = video.url || video.spotifyUrl || '';
+    const buttons = [
+        { buttonId: `.ytmp3 ${sourceUrl}`, buttonText: { displayText: 'MP3' }, type: 1 },
+        { buttonId: `.ymp4 ${sourceUrl}`, buttonText: { displayText: 'MP4' }, type: 1 },
+    ];
     try {
-        const interactive = proto.Message.InteractiveMessage.fromObject({
-            body: { text: body },
-            footer: { text: 'Powered by SUKUNA MD' },
-            header,
-            nativeFlowMessage: { buttons, messageParamsJson: '' },
-        });
-        // This Baileys fork expects a protobuf Message here; passing a plain
-        // viewOnce object makes generateWAMessageFromContent lose the type.
-        const wrapped = generateWAMessageFromContent(from, proto.Message.create({ interactiveMessage: interactive }), { userJid: sock.user?.id, quoted: msg });
-        await sock.relayMessage(from, wrapped.message, { messageId: wrapped.key.id });
+        const message = { text: body, footer: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」', buttons, headerType: 1 };
+        if (thumbnail) {
+            message.image = thumbnail;
+            message.caption = body;
+            delete message.text;
+            message.headerType = 4;
+        }
+        await sock.sendMessage(from, message, { quoted: msg });
         return true;
     } catch (error) {
         console.error('[play card]', error.message);
@@ -332,12 +321,33 @@ async function downloadAndSend({ sock, msg, from, selection, type }) {
     }
 }
 
+async function handleLegacyButton(buttonId, { sock, msg, from }) {
+    const match = String(buttonId || '').match(/^\.(ytmp3|ytmp4|ymp4)\s+(.+)$/i);
+    if (!match) return false;
+    const type = match[1].toLowerCase() === 'ytmp3' ? 'mp3' : 'mp4';
+    const source = String(match[2]).trim();
+    const selection = SPOTIFY_URL_RE.test(source)
+        ? { spotifyUrl: source, title: 'Spotify track' }
+        : { url: normalizeYoutubeUrl(source), title: 'YouTube media' };
+    await sock.sendMessage(from, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
+    try {
+        await downloadAndSend({ sock, msg, from, selection, type });
+        await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
+    } catch (error) {
+        console.error(`[play legacy ${type}]`, error.stderr || error.message);
+        await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
+        await sock.sendMessage(from, { text: `❌ ${type.toUpperCase()} download failed: ${String(error.message || 'unknown error').slice(0, 220)}` }, { quoted: msg });
+    }
+    return true;
+}
+
 module.exports = {
     name: 'play',
     aliases: ['song', 'music', 'audio'],
     description: 'Search YouTube and choose MP3 or MP4 download format',
     usage: '.play <song name or URL>',
     category: 'media',
+    handleLegacyButton,
 
     async execute({ sock, msg, from, args, reply }) {
         const query = args.join(' ').trim();
