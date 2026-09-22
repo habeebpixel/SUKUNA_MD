@@ -5,7 +5,6 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
-const youtubeDl = require('youtube-dl-exec');
 const ffmpegPath = require('ffmpeg-static');
 const { generateWAMessageFromContent, generateWAMessageContent, proto } = require('@pasqua-baileys/baileys');
 
@@ -15,6 +14,12 @@ const SELECTION_TTL_MS = 10 * 60 * 1000;
 const YT_DLP_TIMEOUT_MS = 90_000;
 const selections = new Map();
 const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
+let youtubeDl;
+
+function getYoutubeDl() {
+    if (!youtubeDl) youtubeDl = require('youtube-dl-exec');
+    return youtubeDl;
+}
 
 function safeFileName(value) {
     return String(value || 'audio').replace(/[^a-z0-9 _-]/gi, '').trim().slice(0, 100) || 'audio';
@@ -44,7 +49,7 @@ function getSelection(id) {
 
 async function resolveVideo(input) {
     const source = YOUTUBE_URL_RE.test(input) ? normalizeYoutubeUrl(input) : `ytsearch1:${input}`;
-    const raw = await youtubeDl(source, {
+    const raw = await getYoutubeDl()(source, {
         dumpSingleJson: true,
         skipDownload: true,
         noWarnings: true,
@@ -69,7 +74,7 @@ async function getDirectUrl(url, formats) {
     let lastError;
     for (const format of formats) {
         try {
-            const result = await youtubeDl(url, {
+            const result = await getYoutubeDl()(url, {
                 getUrl: true,
                 format,
                 noWarnings: true,
@@ -207,8 +212,8 @@ module.exports = {
     async execute({ sock, msg, from, args, reply }) {
         const query = args.join(' ').trim();
         if (!query) return reply('🎵 *Usage:* .play <song name or YouTube URL>\n*Example:* .play Essence Wizkid');
-        await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } }).catch(() => {});
         await reply(`🔍 Searching YouTube for: *${query}*...`);
+        await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } }).catch(() => {});
         try {
             const video = await resolveVideo(query);
             await sendFormatCard({ sock, msg, from, video });
