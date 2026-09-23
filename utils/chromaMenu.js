@@ -48,7 +48,7 @@ function commandCards(commands) {
 function couponOffer(now = new Date()) {
     const expiry = new Date(COUPON_EXPIRES_AT);
     if (Number.isNaN(expiry.getTime()) || now > expiry) return { active: false, text: '🏷️ Limited-time offer ended' };
-    return { active: true, code: COUPON_CODE, endsOn: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos' }).format(expiry) };
+    return { active: true, code: COUPON_CODE, endsOn: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Africa/Lagos' }).format(expiry) };
 }
 
 function text(id, value, variant = 'body') {
@@ -58,13 +58,16 @@ function buildChromaSurface({ cards, totalCmds }) {
     const offer = couponOffer();
     const tableCats = cards.slice(0, 9);
     const components = [
-        { id: 'root', component: 'Column', align: 'center', children: ['title', 'promotion', 'dividerTop', 'tableCard', 'dividerBottom', 'footer'] },
-        { id: 'title', component: 'Text', text: `༺ ${PASQUA_BRAND} ༻`, variant: 'h2' },
-        { id: 'promotion', component: 'Card', child: 'promotionColumn' },
+        { id: 'root', component: 'Column', align: 'center', children: ['promotion', 'title', 'dividerTop', 'tableCard', 'dividerBottom', 'footer'] },
+        { id: 'promotion', component: 'Card', child: 'promotionRow' },
+        { id: 'promotionRow', component: 'Row', align: 'center', children: ['promoTag', 'promoDivider', 'promotionColumn'] },
+        text('promoTag', '🏷️', 'h3'),
+        { id: 'promoDivider', component: 'Divider', orientation: 'vertical' },
         { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCode'] },
-        text('promoName', `🏷️ ${PASQUA_BRAND}`, 'h4'),
+        text('promoName', PASQUA_BRAND, 'h4'),
         text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'body'),
         text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'caption'),
+        { id: 'title', component: 'Text', text: `꧁༺ ${PASQUA_BRAND} ༻꧂`, variant: 'h2' },
         { id: 'dividerTop', component: 'Divider' },
         { id: 'tableCard', component: 'Card', child: 'tableColumn' },
         { id: 'tableColumn', component: 'Column', children: ['tableHeader', 'tableDivider', ...tableCats.flatMap((_, index) => [`row${index}`, `divider${index}`])] },
