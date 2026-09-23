@@ -69,7 +69,9 @@ function buildChromaSurface({ cards, totalCmds }) {
         { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCode'] },
         text('promoName', PASQUA_BRAND, 'h5'),
         text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'caption'),
-        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'caption'),
+        // The catalog's caption style is rendered too dark on this surface;
+        // body is the light foreground style used by the reference offer.
+        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'body'),
         { id: 'title', component: 'Text', text: `꧁༺ ${PASQUA_BRAND} ༻꧂`, variant: 'h2' },
         { id: 'dividerTop', component: 'Divider' },
         { id: 'tableCard', component: 'Card', child: 'tableColumn' },
