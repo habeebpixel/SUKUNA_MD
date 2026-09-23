@@ -68,7 +68,7 @@ function buildChromaSurface({ cards, totalCmds }) {
         text('promoDivider', '│', 'caption'),
         { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCodeDivider', 'promoCode'] },
         text('promoName', 'ᴘᴀsǫᴜᴀ ᴛᴇᴄʜ', 'h5'),
-        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'caption'),
+        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'h5'),
         { id: 'promoCodeDivider', component: 'Divider' },
         // h5 is the catalog's light heading style; caption/body can inherit
         // the dark card foreground on some WhatsApp A2UI clients.
@@ -88,7 +88,7 @@ function buildChromaSurface({ cards, totalCmds }) {
             { id: `divider${index}`, component: 'Divider' },
         ]),
         { id: 'dividerBottom', component: 'Divider' },
-        text('footer', `${PASQUA_BRAND} | ${totalCmds} Plugins`, 'caption'),
+        text('footer', `sᴜᴋᴜɴᴀ ᴍᴅ | ${totalCmds} Plugins`, 'caption'),
     ];
     return {
         version: 'v0.9',
