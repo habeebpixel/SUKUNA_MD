@@ -39,6 +39,11 @@ const TELEGRAM_URL   = config.owner?.telegram
     ? `https://${String(config.owner.telegram).replace(/^https?:\/\//i, '')}`
     : 'https://t.me/Pasquaking';
 
+// Akatsuki's promotion mechanism is a native cta_copy action: the visible
+// label is separate from the value copied to the clipboard.
+const COUPON_CODE = process.env.PASQUA_MENU_COUPON || 'PASQUA TECH';
+const COUPON_EXPIRES_AT = process.env.PASQUA_MENU_COUPON_EXPIRES_AT || '2026-10-28T23:59:59+01:00';
+
 const CATEGORY_ORDER = ['owner', 'admin', 'moderation', 'economy', 'fun', 'media', 'ai', 'utility', 'group', 'general', 'unicode', 'textmaker', 'games', 'anime-nsfw', '18plus'];
 
 // WhatsApp's native-flow single_select renders as a bottom-sheet list.
@@ -51,6 +56,16 @@ const MAX_ROWS_PER_SECTION = 8;
 
 function titleCase(category) {
     return String(category || 'general').replace(/(^|-)(\w)/g, (_, divider, letter) => `${divider ? ' ' : ''}${letter.toUpperCase()}`);
+}
+
+function couponOffer(now = new Date()) {
+    const expiry = new Date(COUPON_EXPIRES_AT);
+    if (Number.isNaN(expiry.getTime()) || now > expiry) return { active: false, text: '🏷️ Limited-time offer ended' };
+    return {
+        active: true,
+        code: COUPON_CODE,
+        endsOn: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos' }).format(expiry),
+    };
 }
 
 // Groups the live command registry by category, keeping name + description
@@ -146,6 +161,13 @@ function ctaUrl(displayText, url) {
     };
 }
 
+function ctaCopy(displayText, copyCode, id = 'chroma_coupon') {
+    return {
+        name: 'cta_copy',
+        buttonParamsJson: JSON.stringify({ display_text: displayText, copy_code: copyCode, id }),
+    };
+}
+
 function singleSelect(title, sections) {
     return {
         name: 'single_select',
@@ -234,15 +256,20 @@ async function sendChromaMenu({
     const cards = commandCards(commands);
     const totalCmds = cards.reduce((sum, card) => sum + card.commands.length, 0);
     const name = botName || 'SUKUNA MD';
+    const offer = couponOffer();
 
     // A caller-supplied caption (menu.js's design system) is used verbatim
     // for backward compatibility; otherwise build the clean default body.
     const body = caption && String(caption).trim()
         ? String(caption)
         : buildMenuBody({ name, userTag, prefix, totalCmds, uptime, cards });
-    const menuBody = body;
+    const promotion = offer.active
+        ? `🏷️ *PASQUA TECH*\nEnds on ${offer.endsOn}\nCode: ${offer.code} | INC.`
+        : offer.text;
+    const menuBody = `${promotion}\n\n${body}`;
 
     const buttons = [
+        ...(offer.active ? [ctaCopy('COPY COUPON', offer.code)] : []),
         ctaUrl('1st-Channel', CHANNEL_URL),
         ctaUrl('2nd-Channel', TELEGRAM_URL),
         singleSelect(`Open Menu (${totalCmds})`, buildCategorySections(cards, prefix)),
@@ -288,4 +315,4 @@ async function sendChromaMenu({
     }
 }
 
-module.exports = { sendChromaMenu, commandCards, MENU_IMAGE_URLS, CHANNEL_URL, TELEGRAM_URL };
+module.exports = { sendChromaMenu, commandCards, couponOffer, MENU_IMAGE_URLS, CHANNEL_URL, TELEGRAM_URL, COUPON_CODE, COUPON_EXPIRES_AT };
