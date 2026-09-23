@@ -67,13 +67,13 @@ function buildChromaSurface({ cards, totalCmds }) {
         // errors on clients using the strict catalog schema.
         text('promoDivider', '│', 'caption'),
         { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCodeDivider', 'promoCode'] },
-        text('promoName', 'ᴘᴀsǫᴜᴀ ᴛᴇᴄʜ', 'h5'),
-        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'h5'),
+        text('promoName', 'ᴘᴀsǫᴜᴀ ᴛᴇᴄʜ', 'h1'),
+        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'h2'),
         { id: 'promoCodeDivider', component: 'Divider' },
         // h5 is the catalog's light heading style; caption/body can inherit
         // the dark card foreground on some WhatsApp A2UI clients.
-        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'h5'),
-        { id: 'title', component: 'Text', text: `꧁༺ ${PASQUA_BRAND} ༻꧂`, variant: 'h2' },
+        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'h2'),
+        { id: 'title', component: 'Text', text: '⟡ ᴘᴀsǫᴜᴀ ᴛᴇᴄʜ ⟡', variant: 'h5' },
         { id: 'dividerTop', component: 'Divider' },
         { id: 'tableCard', component: 'Card', child: 'tableColumn' },
         { id: 'tableColumn', component: 'Column', children: ['tableHeader', 'tableDivider', ...tableCats.flatMap((_, index) => [`row${index}`, `divider${index}`])] },
