@@ -1,10 +1,11 @@
 'use strict';
 
-// Chroma is intentionally an HTML rich response, matching the renderer used
-// by commands/games/snake.js. The other menu designs still use their existing
-// image/video/native-message paths in commands/admin/menu.js.
+// Chroma is the Pasqua Tech menu design only. It uses the same structured
+// model as the supplied reference (createSurface/components/sections), then
+// translates that model into this fork's verified WhatsApp native-flow
+// message. The other .setdesign values never enter this module.
 
-const { sendRichHtml } = require('./genaiRich');
+const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('@pasqua-baileys/baileys');
 const config = require('../config');
 
 const MENU_IMAGE_URLS = [
@@ -13,7 +14,6 @@ const MENU_IMAGE_URLS = [
     'https://files.catbox.moe/r8zoof.jpg',
 ];
 let menuImageIndex = 0;
-
 function nextMenuImage() {
     const url = MENU_IMAGE_URLS[menuImageIndex % MENU_IMAGE_URLS.length];
     menuImageIndex += 1;
@@ -26,19 +26,11 @@ const TELEGRAM_URL = config.owner?.telegram
     : 'https://t.me/Pasquaking';
 
 const PASQUA_BRAND = 'PASQUA TECH';
-const COUPON_CODE = process.env.PASQUA_MENU_COUPON || 'PASQUA-TECH';
+const COUPON_CODE = process.env.PASQUA_MENU_COUPON || 'PASQUA TECH';
 const COUPON_EXPIRES_AT = process.env.PASQUA_MENU_COUPON_EXPIRES_AT || '2026-10-28T23:59:59+01:00';
-
-const CATEGORY_ORDER = [
-    'owner', 'admin', 'moderation', 'economy', 'fun', 'media', 'ai', 'utility',
-    'group', 'general', 'unicode', 'textmaker', 'games', 'anime-nsfw', '18plus',
-];
-
-function escapeHtml(value) {
-    return String(value ?? '').replace(/[&<>"']/g, char => ({
-        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
-    }[char]));
-}
+const CATEGORY_ORDER = ['owner', 'admin', 'moderation', 'economy', 'fun', 'media', 'ai', 'utility', 'group', 'general', 'unicode', 'textmaker', 'games', 'anime-nsfw', '18plus'];
+const MAX_SECTIONS = 10;
+const MAX_ROWS_PER_SECTION = 8;
 
 function titleCase(category) {
     return String(category || 'general').replace(/(^|-)(\w)/g, (_, divider, letter) => `${divider ? ' ' : ''}${letter.toUpperCase()}`);
@@ -47,114 +39,172 @@ function titleCase(category) {
 function commandCards(commands) {
     const byCategory = new Map();
     const source = commands instanceof Map ? commands.values() : Array.isArray(commands) ? commands : [];
-
     for (const command of source) {
         if (!command?.name || typeof command.execute !== 'function') continue;
         const category = String(command.category || 'general').toLowerCase();
         if (!byCategory.has(category)) byCategory.set(category, new Map());
         const bucket = byCategory.get(category);
-        if (!bucket.has(command.name)) {
-            bucket.set(command.name, String(command.description || command.desc || '').trim());
-        }
+        if (!bucket.has(command.name)) bucket.set(command.name, String(command.description || command.desc || '').trim());
     }
-
     const categories = [
         ...CATEGORY_ORDER.filter(category => byCategory.has(category)),
         ...Array.from(byCategory.keys()).filter(category => !CATEGORY_ORDER.includes(category)).sort(),
     ];
-
-    return categories.map(category => {
-        const bucket = byCategory.get(category);
-        return {
-            title: titleCase(category),
-            commands: Array.from(bucket.keys()).sort().map(name => ({
-                name,
-                description: bucket.get(name),
-            })),
-        };
-    });
+    return categories.map(category => ({
+        title: titleCase(category),
+        commands: Array.from(byCategory.get(category).keys()).sort().map(name => ({ name, description: byCategory.get(category).get(name) })),
+    }));
 }
 
 function getCouponOffer(now = new Date()) {
     const expiry = new Date(COUPON_EXPIRES_AT);
-    if (Number.isNaN(expiry.getTime()) || now > expiry) {
-        return { active: false, text: 'This limited-time offer has ended.' };
-    }
-
+    if (Number.isNaN(expiry.getTime()) || now > expiry) return { active: false, text: 'This limited-time offer has ended.' };
     return {
         active: true,
         code: COUPON_CODE,
-        endsOn: new Intl.DateTimeFormat('en-GB', {
-            day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos',
-        }).format(expiry),
+        endsOn: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos' }).format(expiry),
     };
 }
 
-function buildCategoryRows(cards, prefix) {
-    return cards.map(card => `
-        <details class="category-detail">
-            <summary>${escapeHtml(card.title)} <span>${card.commands.length} cmds</span></summary>
-            <div class="command-list">${card.commands.map(command => `
-                <div class="command-row"><b>${escapeHtml(prefix + command.name)}</b><small>${escapeHtml(command.description || `${card.title} command`)}</small></div>
-            `).join('')}</div>
-        </details>
-    `).join('');
+function buildCategorySections(cards, prefix) {
+    return cards.slice(0, MAX_SECTIONS).map(card => {
+        const shown = card.commands.slice(0, MAX_ROWS_PER_SECTION);
+        const overflow = card.commands.length - shown.length;
+        const rows = shown.map(command => ({
+            header: '',
+            title: `${prefix}${command.name}`,
+            description: (command.description || `${card.title} command`).slice(0, 60),
+            id: `chroma:${prefix}${command.name}`,
+        }));
+        if (overflow > 0) rows.push({ header: '', title: `+${overflow} more in ${card.title}`, description: 'See the full menu caption above', id: `chroma:${prefix}menu` });
+        return { title: `${card.title.toUpperCase()} | ${card.commands.length} CMDS`, highlight_label: '', rows };
+    });
 }
 
-function buildChromaHtml({ cards, totalCmds, imageUrl, prefix = '.' }) {
+// This is the reference code's contract: a stable surface with component IDs,
+// a promotion section, a category table, footer, and action row. Keeping this
+// object separate from the transport prevents styling and command data from
+// being confused with Baileys wire-format fields.
+function buildPasquaWidget(cards, totalCmds, prefix = '.') {
     const offer = getCouponOffer();
-    const categoryRows = cards.map(card => `
-        <div class="table-row"><span>${escapeHtml(card.title)}</span><strong>${card.commands.length} cmds</strong></div>
-    `).join('');
+    const tableCats = cards.slice(0, 9);
+    const promotionText = offer.active
+        ? `🏷️ ${PASQUA_BRAND}\nEnds on ${offer.endsOn}\nCode: ${offer.code} | INC.`
+        : `🏷️ ${PASQUA_BRAND}\n${offer.text}`;
+    const components = [
+        { id: 'root', component: 'Column', align: 'center', children: ['titleRow', 'promotion', 'd1', 'tableCard', 'd2', 'foot', 'btnRow'] },
+        { id: 'titleRow', component: 'Row', justify: 'center', children: ['title'] },
+        { id: 'title', component: 'Text', text: `༺ ${PASQUA_BRAND} ༻`, variant: 'h2' },
+        { id: 'promotion', component: 'Card', child: 'promotionText' },
+        { id: 'promotionText', component: 'Text', text: promotionText, variant: 'caption' },
+        { id: 'd1', component: 'Divider' },
+        { id: 'tableCard', component: 'Card', child: 'tableCol' },
+        { id: 'tableCol', component: 'Column', children: ['headRow', 'divHead', ...tableCats.flatMap((_, index) => [`row${index}`, `div${index}`])] },
+        { id: 'headRow', component: 'Row', children: ['headL', 'headR'] },
+        { id: 'headL', component: 'Column', weight: 1, children: ['hCmd'] },
+        { id: 'hCmd', component: 'Text', text: 'Category', variant: 'h5' },
+        { id: 'headR', component: 'Column', weight: 1, children: ['hCount'] },
+        { id: 'hCount', component: 'Text', text: 'Count', variant: 'h5' },
+        { id: 'divHead', component: 'Divider' },
+        ...tableCats.flatMap((card, index) => [
+            { id: `row${index}`, component: 'Row', children: [`cat${index}`, `count${index}`] },
+            { id: `cat${index}`, component: 'Text', text: card.title },
+            { id: `count${index}`, component: 'Text', text: `${card.commands.length} cmds` },
+            { id: `div${index}`, component: 'Divider' },
+        ]),
+        { id: 'd2', component: 'Divider' },
+        { id: 'foot', component: 'Text', text: `${PASQUA_BRAND} | ${totalCmds} Plugins`, variant: 'caption' },
+        { id: 'btnRow', component: 'Row', justify: 'spaceEvenly', children: ['openMenu', 'btn1', 'btn2'] },
+        { id: 'openMenu', component: 'Button', child: 'openMenuLabel', variant: 'primary', action: { call: 'openCommandList', args: { totalCmds } } },
+        { id: 'openMenuLabel', component: 'Text', text: `Ξ OPEN MENU (${totalCmds})` },
+        { id: 'btn1', component: 'Button', child: 'btn1Label', variant: 'primary', action: { call: 'openUrl', args: { url: CHANNEL_URL } } },
+        { id: 'btn1Label', component: 'Text', text: '1st-Channel' },
+        { id: 'btn2', component: 'Button', child: 'btn2Label', variant: 'primary', action: { call: 'openUrl', args: { url: TELEGRAM_URL } } },
+        { id: 'btn2Label', component: 'Text', text: '2nd-Channel' },
+    ];
+    return {
+        version: 'v0.9',
+        createSurface: { surfaceId: 'pasqua-tech-chroma-v1', catalogId: 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json', components },
+        sections: buildCategorySections(cards, prefix),
+        totalCmds,
+        footerText: PASQUA_BRAND,
+    };
+}
 
-    const offerMarkup = offer.active
-        ? `<div class="offer-title">🏷️ LIMITED-TIME COUPON</div>
-           <div class="offer-code">${escapeHtml(offer.code)}</div>
-           <div class="offer-expiry">Ends on ${escapeHtml(offer.endsOn)}</div>`
-        : `<div class="offer-title">🏷️ LIMITED-TIME COUPON</div>
-           <div class="offer-expiry">${escapeHtml(offer.text)}</div>`;
+function buildMenuBody(widget) {
+    const components = new Map(widget.createSurface.components.map(component => [component.id, component]));
+    const offer = components.get('promotionText')?.text || '';
+    const rows = widget.createSurface.components.filter(component => /^cat\d+$/.test(component.id)).map(component => {
+        const index = component.id.slice(3);
+        const count = components.get(`count${index}`)?.text || '';
+        return `${component.text}${'.'.repeat(Math.max(2, 20 - String(component.text).length))}${count}`;
+    });
+    return [
+        `┏━━━━━━━━━━━━━━━━━━━━━━━━┓`,
+        `┃ ${offer.split('\n').join('\n┃ ')}`,
+        `┗━━━━━━━━━━━━━━━━━━━━━━━━┛`,
+        `༺ ${PASQUA_BRAND} ༻`,
+        '━━━━━━━━━━━━━━━━━━━━━━━━',
+        'Category             Count',
+        ...rows,
+        '━━━━━━━━━━━━━━━━━━━━━━━━',
+        widget.footerText + ` | ${widget.totalCmds} Plugins`,
+    ].join('\n');
+}
 
-    return `<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><style>
-*{box-sizing:border-box}html,body{margin:0;background:transparent;font-family:Arial,sans-serif}body{padding:6px;background:radial-gradient(circle at 50% 3%,#24406b,#070b14 70%)}
-.card{overflow:hidden;padding:0 12px 13px;border:2px solid #8eb8ff;border-radius:20px;background:linear-gradient(145deg,#0b1426,#172a49 52%,#070d19);color:#e8f1ff;box-shadow:inset 0 0 0 3px #182d4d,0 8px 20px #000b}
-.hero{display:block;width:calc(100% + 24px);height:150px;margin:0 -12px 12px;object-fit:cover;filter:grayscale(1) contrast(1.15);border-bottom:2px solid #8eb8ff}.brand{text-align:center;color:#dbe9ff;font:bold 22px Arial Black,Arial,sans-serif;letter-spacing:1px;text-shadow:0 0 12px #5da3ff}.subtitle{text-align:center;margin:3px 0 10px;color:#9db6d9;font:10px monospace;letter-spacing:1px}.offer{padding:10px;margin:0 0 11px;border:1px solid #e6bd65;border-radius:12px;background:linear-gradient(145deg,#352b16,#171b26);text-align:center;box-shadow:0 0 12px #d5a43833}.offer-title{color:#ffe29a;font:bold 12px monospace;letter-spacing:1px}.offer-code{margin-top:4px;color:#fff2c7;font:bold 17px monospace;letter-spacing:1px}.offer-expiry{margin-top:3px;color:#d8c38d;font:11px monospace}.table-card{padding:10px;border:1px solid #537ebc;border-radius:13px;background:#071120cc}.table-head,.table-row{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:center;padding:6px 4px;font:12px monospace}.table-head{color:#b9d7ff;font-weight:900;border-bottom:1px solid #5074a4;text-transform:uppercase}.table-row{color:#e6efff;border-bottom:1px dotted #365174}.table-row:last-child{border-bottom:0}.table-row strong{color:#b9d7ff;font-weight:700}.footer{margin:10px 0 8px;text-align:center;color:#9db6d9;font:10px monospace;letter-spacing:1px}.open{display:block;width:100%;height:40px;border:2px solid #8eb8ff;border-radius:11px;color:#071120;background:linear-gradient(#d8e8ff,#80b5ff);font-weight:900;font-size:14px}.links{display:grid;grid-template-columns:1fr 1fr;gap:7px;margin-top:8px}.links a{display:grid;place-items:center;height:34px;border:1px solid #5c86bf;border-radius:9px;color:#dceaff;background:#142946;text-decoration:none;font:bold 11px Arial,sans-serif}.details{margin-top:10px}.category-detail{border:1px solid #35557f;border-radius:9px;margin-top:6px;background:#0a1729}.category-detail summary{padding:8px;color:#dceaff;font:bold 12px monospace;cursor:pointer}.category-detail summary span{float:right;color:#91b9ef}.command-list{padding:0 8px 7px;border-top:1px solid #294566}.command-row{display:flex;justify-content:space-between;gap:8px;padding:5px 0;border-bottom:1px dotted #294566;font:11px monospace}.command-row:last-child{border-bottom:0}.command-row b{color:#e8f1ff}.command-row small{overflow:hidden;color:#91a9c8;text-overflow:ellipsis;white-space:nowrap}
-</style></head><body><div class="card"><img class="hero" src="${escapeHtml(imageUrl)}" alt="${escapeHtml(PASQUA_BRAND)}"><div class="brand">༺ ${escapeHtml(PASQUA_BRAND)} ༻</div><div class="subtitle">PASQUA TECH · COMMAND SELECTOR</div><div class="offer">${offerMarkup}</div><div class="table-card"><div class="table-head"><span>Category</span><span>Count</span></div>${categoryRows}</div><div class="footer">${escapeHtml(PASQUA_BRAND)} | ${totalCmds} Plugins</div><button class="open" id="openMenu">Ξ OPEN MENU (${totalCmds})</button><div class="links"><a href="${escapeHtml(CHANNEL_URL)}">1st-Channel</a><a href="${escapeHtml(TELEGRAM_URL)}">2nd-Channel</a></div><div class="details" id="commandMenu" hidden>${buildCategoryRows(cards, prefix)}</div></div><script>(function(){var b=document.getElementById('openMenu'),m=document.getElementById('commandMenu');if(b&&m)b.onclick=function(){m.hidden=!m.hidden;b.textContent=m.hidden?'Ξ OPEN MENU (${totalCmds})':'Ξ CLOSE MENU (${totalCmds})'}})();</script></body></html>`;
+function ctaUrl(displayText, url) {
+    return { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: displayText, url, merchant_url: url }) };
+}
+function singleSelect(title, sections) {
+    return { name: 'single_select', buttonParamsJson: JSON.stringify({ title, sections }) };
+}
+function nativeFlowBizNode() {
+    return [{ tag: 'biz', attrs: {}, content: [{ tag: 'interactive', attrs: { type: 'native_flow', v: '1' }, content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }] }] }];
+}
+
+async function buildHeader({ sock, title, imageUrl }) {
+    if (imageUrl) {
+        try {
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 6000);
+            const response = await fetch(imageUrl, { signal: controller.signal });
+            clearTimeout(timeout);
+            if (response.ok) {
+                const buffer = Buffer.from(await response.arrayBuffer());
+                const { imageMessage } = await prepareWAMessageMedia({ image: buffer }, { upload: sock.waUploadToServer });
+                return proto.Message.InteractiveMessage.Header.fromObject({ title, hasMediaAttachment: true, imageMessage });
+            }
+        } catch (_) {}
+    }
+    return proto.Message.InteractiveMessage.Header.fromObject({ title, hasMediaAttachment: false });
 }
 
 async function sendChromaMenu({ sock, jid, quoted, prefix = '.', commands }) {
     const cards = commandCards(commands);
     const totalCmds = cards.reduce((sum, card) => sum + card.commands.length, 0);
-    const html = buildChromaHtml({ cards, totalCmds, prefix, imageUrl: nextMenuImage() });
-
+    const widget = buildPasquaWidget(cards, totalCmds, prefix);
+    const buttons = [
+        singleSelect(`Ξ OPEN MENU (${totalCmds})`, widget.sections),
+        ctaUrl('1st-Channel', CHANNEL_URL),
+        ctaUrl('2nd-Channel', TELEGRAM_URL),
+    ];
     try {
-        // Use the exact HTML rich-response route used by Snake. This is the
-        // Chroma renderer; default, nor, neon, and every other design are not
-        // routed through this function.
-        return await sendRichHtml({
-            sock,
-            jid,
-            quoted,
-            html,
-            title: PASQUA_BRAND,
-            interactive: true,
+        const header = await buildHeader({ sock, title: PASQUA_BRAND, imageUrl: nextMenuImage() });
+        const interactiveMessage = proto.Message.InteractiveMessage.fromObject({
+            header,
+            body: { text: buildMenuBody(widget) },
+            nativeFlowMessage: { buttons, messageParamsJson: JSON.stringify({ surfaceId: widget.createSurface.surfaceId }) },
         });
+        const wrapped = generateWAMessageFromContent(jid, { viewOnceMessage: { message: { messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} }, interactiveMessage } } }, {
+            userJid: sock.user?.id,
+            ...(quoted?.message ? { quoted } : {}),
+        });
+        await sock.relayMessage(jid, wrapped.message, { messageId: wrapped.key.id, additionalNodes: nativeFlowBizNode() });
+        return wrapped;
     } catch (error) {
-        console.error('[CHROMA HTML MENU]', error?.message || error);
-        return sock.sendMessage(jid, {
-            text: `${PASQUA_BRAND}\n\n${getCouponOffer().active ? `Coupon: ${COUPON_CODE} · Ends on ${getCouponOffer().endsOn}` : getCouponOffer().text}\n\n${PASQUA_BRAND} | ${totalCmds} Plugins`,
-        }, quoted?.message ? { quoted } : undefined);
+        console.error('[CHROMA MENU]', error?.message || error);
+        return sock.sendMessage(jid, { text: buildMenuBody(widget) + `\n\n🔗 ${CHANNEL_URL}\n✈️ ${TELEGRAM_URL}` }, quoted?.message ? { quoted } : undefined);
     }
 }
 
-module.exports = {
-    sendChromaMenu,
-    commandCards,
-    buildChromaHtml,
-    getCouponOffer,
-    MENU_IMAGE_URLS,
-    CHANNEL_URL,
-    TELEGRAM_URL,
-    PASQUA_BRAND,
-    COUPON_CODE,
-    COUPON_EXPIRES_AT,
-};
+module.exports = { sendChromaMenu, commandCards, buildPasquaWidget, buildMenuBody, getCouponOffer, MENU_IMAGE_URLS, CHANNEL_URL, TELEGRAM_URL, PASQUA_BRAND, COUPON_CODE, COUPON_EXPIRES_AT };
