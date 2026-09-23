@@ -59,7 +59,9 @@ function buildChromaSurface({ cards, totalCmds }) {
     const tableCats = cards.slice(0, 9);
     const components = [
         { id: 'root', component: 'Column', align: 'center', children: ['promotion', 'title', 'dividerTop', 'tableCard', 'dividerBottom', 'footer'] },
-        { id: 'promotion', component: 'Card', child: 'promotionRow' },
+        // A Card applies the client’s dark HTML surface background. The
+        // reference offer is transparent against the parent surface.
+        { id: 'promotion', component: 'Column', children: ['promotionRow'] },
         { id: 'promotionRow', component: 'Row', children: ['promoTag', 'promoDivider', 'promotionColumn'] },
         text('promoTag', '🏷️', 'h5'),
         // The basic A2UI catalog has no Divider orientation prop. A text
@@ -67,12 +69,12 @@ function buildChromaSurface({ cards, totalCmds }) {
         // errors on clients using the strict catalog schema.
         text('promoDivider', '│', 'caption'),
         { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCodeDivider', 'promoCode'] },
-        text('promoName', 'ᴘᴀsǫᴜᴀ ᴛᴇᴄʜ', 'h1'),
-        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'h2'),
+        text('promoName', 'ᴘᴀsǫᴜᴀ ᴛᴇᴄʜ', 'h5'),
+        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'h5'),
         { id: 'promoCodeDivider', component: 'Divider' },
         // h5 is the catalog's light heading style; caption/body can inherit
         // the dark card foreground on some WhatsApp A2UI clients.
-        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'h2'),
+        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'h5'),
         { id: 'title', component: 'Text', text: '⟡ ᴘᴀsǫᴜᴀ ᴛᴇᴄʜ ⟡', variant: 'h5' },
         { id: 'dividerTop', component: 'Divider' },
         { id: 'tableCard', component: 'Card', child: 'tableColumn' },
