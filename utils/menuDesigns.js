@@ -684,9 +684,6 @@ function designChroma(ctx) {
     const bi = boldItalic;
     const rule = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
     const lines = [
-        `╭${rule}╮`,
-        `│   ${bi('CHROMA · SUKUNA MD')}`,
-        `╰${rule}╯`,
         `│ USER     : ${userTag}`,
         `│ CREATOR  : ${creator}`,
         `│ MODE     : ${mode}`,
@@ -713,11 +710,6 @@ function designChroma(ctx) {
 
     lines.push(
         `╭${rule}╮`,
-        `│  🎟️  ${bi('SUKUNA MD COUPON')}`,
-        `│  USE CODE : CHROMA2026`,
-        `│  STATUS   : ACTIVE`,
-        `│  ENDS ON  : NOV 2026`,
-        `╰${rule}╯`,
         '',
         'Tap a menu action below to continue.',
         `     ⛧  ${bi('Powered by Pasqua Tech')}  ⛧`,

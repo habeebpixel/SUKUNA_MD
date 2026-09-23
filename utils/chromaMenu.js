@@ -33,6 +33,37 @@ function nextMenuImage() {
     menuImageIndex++;
     return url;
 }
+
+async function sendOfferCard({ sock, jid, quoted }) {
+    const imageUrl = nextMenuImage();
+    try {
+        const response = await fetch(imageUrl, { signal: AbortSignal.timeout(8000) });
+        if (!response.ok) throw new Error(`offer image HTTP ${response.status}`);
+        const buffer = Buffer.from(await response.arrayBuffer());
+        const { imageMessage } = await prepareWAMessageMedia({ image: buffer }, { upload: sock.waUploadToServer });
+        const content = proto.Message.fromObject({
+            messageContextInfo: {
+                botMetadata: {
+                    botRenderingConfigMetadata: { bloksVersioningId: '2Q==' },
+                    botPromotionMessageMetadata: { promotionType: 'C50', buttonTitle: 'View Menu' },
+                },
+            },
+            buttonsMessage: {
+                contentText: '🏷️  MADARA APEX',
+                footerText: 'Ends on Oct 23\nCode: MADARA APEX | INC.',
+                buttons: [{ buttonId: '.menu', buttonText: { displayText: 'View Menu' }, type: 'RESPONSE' }],
+                headerType: 'IMAGE',
+                imageMessage,
+            },
+        });
+        const wrapped = generateWAMessageFromContent(jid, content, { userJid: sock.user?.id, ...(quoted?.message ? { quoted } : {}) });
+        await sock.relayMessage(jid, wrapped.message, { messageId: wrapped.key.id });
+        return true;
+    } catch (error) {
+        console.warn('[CHROMA OFFER CARD]', error.message);
+        return false;
+    }
+}
 const CHANNEL_URL    = 'https://whatsapp.com/channel/0029Vb8YB2T90x2zvQLnEb2k';
 const TELEGRAM_URL   = config.owner?.telegram
     ? `https://${String(config.owner.telegram).replace(/^https?:\/\//i, '')}`
@@ -239,15 +270,7 @@ async function sendChromaMenu({
     const body = caption && String(caption).trim()
         ? String(caption)
         : buildMenuBody({ name, userTag, prefix, totalCmds, uptime, cards });
-    const coupon = [
-        '🎟️  SUKUNA MD COUPON',
-        '━━━━━━━━━━━━━━━━━━━━',
-        'USE CODE: SUKUNA2026',
-        'STATUS  : ACTIVE',
-        'ENDS ON : NOV 2026',
-        '━━━━━━━━━━━━━━━━━━━━',
-    ].join('\n');
-    const menuBody = body.includes('SUKUNA MD COUPON') ? body : `${body}\n\n${coupon}`;
+    const menuBody = body;
 
     const buttons = [
         ctaUrl('1st-Channel', CHANNEL_URL),
@@ -256,6 +279,7 @@ async function sendChromaMenu({
     ];
 
     try {
+        await sendOfferCard({ sock, jid, quoted });
         const header = await buildHeader({ sock, title: name, imageUrl: nextMenuImage() });
 
         const interactiveMessage = proto.Message.InteractiveMessage.fromObject({
