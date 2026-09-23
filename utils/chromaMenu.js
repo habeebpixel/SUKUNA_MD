@@ -247,7 +247,7 @@ async function sendChromaMenu({
         'ENDS ON : NOV 2026',
         '━━━━━━━━━━━━━━━━━━━━',
     ].join('\n');
-    const menuBody = `${body}\n\n${coupon}`;
+    const menuBody = body.includes('SUKUNA MD COUPON') ? body : `${body}\n\n${coupon}`;
 
     const buttons = [
         ctaUrl('1st-Channel', CHANNEL_URL),

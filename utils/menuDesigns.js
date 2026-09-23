@@ -682,36 +682,47 @@ function designChroma(ctx) {
             date, time, status, platform } = ctx;
 
     const bi = boldItalic;
-    let out = '';
-    out += '╔══════════════════════════════╗\n';
-    out += `║  ⛧  ${bi('C H R O M A')}  ·  ${bi('S U K U N A   M D')}  ⛧\n`;
-    out += '╚══════════════════════════════╝\n';
-    out += `┃ ◆ User      › ${userTag}\n`;
-    out += `┃ ◆ Creator   › ${creator}\n`;
-    out += `┃ ◆ Mode      › ${mode}\n`;
-    out += `┃ ◆ Prefix    › ${prefix}\n`;
-    out += `┃ ◆ Commands  › ${total}\n`;
-    out += `┃ ◆ Uptime    › ${uptime}\n`;
-    out += `┃ ◆ Version   › ${version}\n`;
-    out += `┃ ◆ Status    › ${status}\n`;
-    out += `┃ ◆ Platform  › ${platform}\n`;
-    out += `┃ ◆ Date      › ${date}  ·  ${time}\n`;
-    out += '╰──────────────────────────────╯\n\n';
+    const rule = '━━━━━━━━━━━━━━━━━━━━━━━━━━━━';
+    const lines = [
+        `╭${rule}╮`,
+        `│   ${bi('CHROMA · SUKUNA MD')}`,
+        `╰${rule}╯`,
+        `│ USER     : ${userTag}`,
+        `│ CREATOR  : ${creator}`,
+        `│ MODE     : ${mode}`,
+        `│ PREFIX   : ${prefix}`,
+        `│ COMMANDS : ${total}`,
+        `│ UPTIME   : ${uptime}`,
+        `│ VERSION  : ${version}`,
+        `│ STATUS   : ${status}`,
+        `│ PLATFORM : ${platform}`,
+        `│ DATE     : ${date}`,
+        `│ TIME     : ${time}`,
+        `╰${rule}╯`,
+        '',
+    ];
 
     for (const cat of sortedCategories) {
         const label = CATEGORY_LABELS[cat] || cat;
         const names = byCategory[cat] || [];
-        out += `╭─〔 ✦ ${bi(label)} ✦ 〕\n`;
-        out += pairColumns(names, '✧');
-        out += `╰┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄┄\n\n`;
+        if (!names.length) continue;
+        lines.push(`┌─ ${bi(label.toUpperCase())}`);
+        names.forEach(name => lines.push(`│  ▸ ${name}`));
+        lines.push('└────────────────────────────', '');
     }
 
-    out += '╭━━━━━━━━━━━━━━━━━━━━━━━━━━╮\n';
-    out += `┃ ↳ Tap a button below to run a\n`;
-    out += `┃   command instantly.\n`;
-    out += '╰━━━━━━━━━━━━━━━━━━━━━━━━━━╯\n';
-    out += `       ⛧  ${bi('Powered by Pasqua Tech')}  ⛧`;
-    return out;
+    lines.push(
+        `╭${rule}╮`,
+        `│  🎟️  ${bi('SUKUNA MD COUPON')}`,
+        `│  USE CODE : CHROMA2026`,
+        `│  STATUS   : ACTIVE`,
+        `│  ENDS ON  : NOV 2026`,
+        `╰${rule}╯`,
+        '',
+        'Tap a menu action below to continue.',
+        `     ⛧  ${bi('Powered by Pasqua Tech')}  ⛧`,
+    );
+    return lines.join('\n');
 }
 
 // ── Design: crysnovax — CRYSNOVAX signature style ──────────────────
