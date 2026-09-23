@@ -21,9 +21,7 @@ module.exports = {
     usage:       '.setcmd <command>  (reply to a sticker or emoji)',
     category:    'general',
 
-    async execute({ sock, msg, from, reply, args, isGroup }) {
-        if (!isGroup) return reply('👥 This command can only be used in groups!');
-
+    async execute({ sock, msg, from, reply, args }) {
         const commandName = args[0]?.toLowerCase().trim();
         if (!commandName) {
             return reply(

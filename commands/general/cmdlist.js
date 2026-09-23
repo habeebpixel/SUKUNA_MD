@@ -14,9 +14,7 @@ module.exports = {
     usage:       '.cmdlist',
     category:    'general',
 
-    async execute({ from, reply, isGroup }) {
-        if (!isGroup) return reply('👥 This command can only be used in groups!');
-
+    async execute({ from, reply }) {
         const stickers = Object.entries(database.getAllStickerCmds(from));
         const emojis = Object.entries(database.getAllEmojiCmds(from));
         const entries = [

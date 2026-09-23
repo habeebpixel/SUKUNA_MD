@@ -15,9 +15,7 @@ module.exports = {
     usage:       '.unsetcmd  (reply to a sticker or emoji)',
     category:    'general',
 
-    async execute({ sock, msg, from, reply, isGroup }) {
-        if (!isGroup) return reply('👥 This command can only be used in groups!');
-
+    async execute({ sock, msg, from, reply }) {
         const ctx = msg.message?.extendedTextMessage?.contextInfo;
         if (!ctx) {
             return reply('❌ Please *reply to a sticker or emoji* with .unsetcmd to remove its binding.');
