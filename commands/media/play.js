@@ -1,16 +1,13 @@
 'use strict';
 
-const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
-const { generateWAMessageFromContent, proto, prepareWAMessageMedia } = require('@pasqua-baileys/baileys');
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
-const SELECTION_TTL_MS = 10 * 60 * 1000;
 const YT_DLP_TIMEOUT_MS = 90_000;
 const PREXZY_API = 'https://prexzyapis.com';
 const ELITE_API = 'https://eliteprotech-apis.zone.id';
@@ -20,7 +17,6 @@ const ELITE_API = 'https://eliteprotech-apis.zone.id';
 const RAPIDAPI_KEY_OVERRIDE = 'f66a5cfcccmsh41d60daed9f894cp12dfb4jsn0869a1509a4b';
 const RAPIDAPI_HOST_OVERRIDE = 'spotify-music-mp3-downloader-api.p.rapidapi.com';
 const RAPIDAPI_SPOTIFY_HOST = process.env.RAPIDAPI_SPOTIFY_HOST || RAPIDAPI_HOST_OVERRIDE || 'spotify-music-mp3-downloader-api.p.rapidapi.com';
-const selections = new Map();
 const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
 const SPOTIFY_URL_RE = /^https?:\/\/open\.spotify\.com\/track\/[A-Za-z0-9]+/i;
 let youtubeDl;
@@ -38,22 +34,6 @@ function normalizeYoutubeUrl(value) {
     const input = String(value || '').trim();
     const match = input.match(YOUTUBE_URL_RE);
     return match ? `https://www.youtube.com/watch?v=${match[1]}` : input;
-}
-
-function rememberSelection(data) {
-    const id = crypto.randomBytes(6).toString('hex');
-    selections.set(id, { ...data, expiresAt: Date.now() + SELECTION_TTL_MS });
-    setTimeout(() => selections.delete(id), SELECTION_TTL_MS + 1000).unref?.();
-    return id;
-}
-
-function getSelection(id) {
-    const item = selections.get(id);
-    if (!item || item.expiresAt < Date.now()) {
-        selections.delete(id);
-        return null;
-    }
-    return item;
 }
 
 async function prexzyJson(pathname, params) {
@@ -272,68 +252,15 @@ async function fetchThumbnailBuffer(url) {
     } catch (_) { return null; }
 }
 
-// Deliberately the OLD/legacy WhatsApp buttonsMessage type (buttonId +
-// buttonText.displayText + type RESPONSE) — NOT nativeFlowMessage /
-// interactiveMessage. The native-flow format is WhatsApp's AI-Business
-// button surface (that's why it needs the special bot/biz_bot node to even
-// unlock in a private chat) and is what was causing the AI-badge chip
-// rendering. A plain buttonsMessage carries no such tagging and is what the
-// reference bot in your screenshots is actually sending — it just needs the
-// viewOnceMessage + deviceListMetadata wrap to not get silently dropped by
-// WhatsApp before it reaches the recipient (this repo has no global
-// patchMessageBeforeSending configured in lib/sessionManager.js, so this
-// file has to do that wrap itself).
-async function sendFormatCard({ sock, msg, from, video }) {
+async function sendSongPreview({ sock, msg, from, video }) {
     const body = [
-        `🎬 *${video.title}*`,
+        `🎵 *${video.title}*`,
         video.author ? `👤 ${video.author}` : '',
         video.duration ? `⏱️ ${video.duration}` : '',
-        '',
-        'Choose a format to download:',
     ].filter(Boolean).join('\n');
     const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
-    const sourceUrl = video.url || video.spotifyUrl || '';
-    const Type = proto.Message.ButtonsMessage.Button.Type;
-    const HeaderType = proto.Message.ButtonsMessage.HeaderType;
-    const buttons = [
-        { buttonId: `.ytmp3 ${sourceUrl}`, buttonText: { displayText: 'MP3' }, type: Type.RESPONSE },
-        { buttonId: `.ymp4 ${sourceUrl}`, buttonText: { displayText: 'MP4' }, type: Type.RESPONSE },
-    ];
-
-    let imageMessage = null;
-    if (thumbnail) {
-        try {
-            ({ imageMessage } = await prepareWAMessageMedia({ image: thumbnail }, { upload: sock.waUploadToServer }));
-        } catch (error) {
-            console.warn('[play card] thumbnail upload failed:', error.message);
-        }
-    }
-
-    try {
-        if (typeof sock?.relayMessage !== 'function') throw new Error('relay unavailable');
-        const buttonsMessage = proto.Message.ButtonsMessage.fromObject({
-            contentText: body,
-            footerText: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」',
-            buttons,
-            headerType: imageMessage ? HeaderType.IMAGE : HeaderType.EMPTY,
-            ...(imageMessage ? { imageMessage } : {}),
-        });
-        const wrapped = generateWAMessageFromContent(from, {
-            viewOnceMessage: {
-                message: {
-                    messageContextInfo: { deviceListMetadataVersion: 2, deviceListMetadata: {} },
-                    buttonsMessage,
-                },
-            },
-        }, { userJid: sock.user?.id, quoted: msg });
-        await sock.relayMessage(from, wrapped.message, { messageId: wrapped.key.id });
-        return true;
-    } catch (error) {
-        console.error('[play card]', error.message);
-        if (thumbnail) await sock.sendMessage(from, { image: thumbnail, caption: `${body}\n\nReply with .play <same title> to try again.` }, { quoted: msg });
-        else await sock.sendMessage(from, { text: body }, { quoted: msg });
-        return false;
-    }
+    if (thumbnail) await sock.sendMessage(from, { image: thumbnail, caption: body }, { quoted: msg });
+    else await sock.sendMessage(from, { text: body }, { quoted: msg });
 }
 
 async function downloadAndSend({ sock, msg, from, selection, type }) {
@@ -354,34 +281,12 @@ async function downloadAndSend({ sock, msg, from, selection, type }) {
     }
 }
 
-async function handleLegacyButton(buttonId, { sock, msg, from }) {
-    const match = String(buttonId || '').match(/^\.(ytmp3|ytmp4|ymp4)\s+(.+)$/i);
-    if (!match) return false;
-    const type = match[1].toLowerCase() === 'ytmp3' ? 'mp3' : 'mp4';
-    const source = String(match[2]).trim();
-    const selection = SPOTIFY_URL_RE.test(source)
-        ? { spotifyUrl: source, title: 'Spotify track' }
-        : { url: normalizeYoutubeUrl(source), title: 'YouTube media' };
-    await sock.sendMessage(from, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
-    try {
-        await downloadAndSend({ sock, msg, from, selection, type });
-        await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
-    } catch (error) {
-        console.error(`[play legacy ${type}]`, error.stderr || error.message);
-        await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
-        await sock.sendMessage(from, { text: `❌ ${type.toUpperCase()} download failed: ${String(error.message || 'unknown error').slice(0, 220)}` }, { quoted: msg });
-    }
-    return true;
-}
-
 module.exports = {
     name: 'play',
     aliases: ['song', 'music', 'audio'],
-    description: 'Search YouTube and choose MP3 or MP4 download format',
+    description: 'Search YouTube, show a short preview, and send the song audio',
     usage: '.play <song name or URL>',
     category: 'media',
-    handleLegacyButton,
-
     async execute({ sock, msg, from, args, reply }) {
         const query = args.join(' ').trim();
         if (!query) return reply('🎵 *Usage:* .play <song name or YouTube URL>\n*Example:* .play Essence Wizkid');
@@ -389,33 +294,13 @@ module.exports = {
         await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } }).catch(() => {});
         try {
             const video = await resolveVideo(query);
-            await sendFormatCard({ sock, msg, from, video });
+            await sendSongPreview({ sock, msg, from, video });
+            await downloadAndSend({ sock, msg, from, selection: video, type: 'mp3' });
             await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
         } catch (error) {
             console.error('[play] resolve error:', error.stderr || error.message);
             await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
             return reply('❌ I could not find or prepare that YouTube media right now. Try another title or link.');
         }
-    },
-
-    async handleButton(buttonId, { sock, msg, from }) {
-        const match = String(buttonId || '').match(/^play:(mp3|mp4):([a-f0-9]{12})$/i);
-        if (!match) return false;
-        const [, type, token] = match;
-        const selection = getSelection(token);
-        if (!selection) {
-            await sock.sendMessage(from, { text: '⏳ This download choice expired. Run `.play <song>` again.' }, { quoted: msg });
-            return true;
-        }
-        await sock.sendMessage(from, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
-        try {
-            await downloadAndSend({ sock, msg, from, selection, type });
-            await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
-        } catch (error) {
-            console.error(`[play ${type}] download error:`, error.stderr || error.message);
-            await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
-            await sock.sendMessage(from, { text: `❌ ${type.toUpperCase()} download failed: ${String(error.message || 'unknown error').slice(0, 220)}` }, { quoted: msg });
-        }
-        return true;
     },
 };
