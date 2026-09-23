@@ -6,6 +6,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
+const { generateWAMessageFromContent, generateWAMessageContent, proto } = require('@pasqua-baileys/baileys');
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
@@ -282,18 +283,29 @@ async function sendFormatCard({ sock, msg, from, video }) {
     const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
     const sourceUrl = video.url || video.spotifyUrl || '';
     const buttons = [
-        { buttonId: `.ytmp3 ${sourceUrl}`, buttonText: { displayText: 'MP3' }, type: 1 },
-        { buttonId: `.ymp4 ${sourceUrl}`, buttonText: { displayText: 'MP4' }, type: 1 },
+        { buttonId: `.ytmp3 ${sourceUrl}`, buttonText: { displayText: 'MP3' }, type: 'RESPONSE' },
+        { buttonId: `.ymp4 ${sourceUrl}`, buttonText: { displayText: 'MP4' }, type: 'RESPONSE' },
     ];
     try {
-        const message = { text: body, footer: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」', buttons, headerType: 1 };
-        if (thumbnail) {
-            message.image = thumbnail;
-            message.caption = body;
-            delete message.text;
-            message.headerType = 4;
+        let imageMessage;
+        if (thumbnail && sock.waUploadToServer) {
+            const media = await generateWAMessageContent({ image: thumbnail }, { upload: sock.waUploadToServer });
+            imageMessage = media?.imageMessage;
         }
-        await sock.sendMessage(from, message, { quoted: msg });
+        const message = proto.Message.fromObject({
+            messageContextInfo: {
+                botMetadata: { botRenderingConfigMetadata: { bloksVersioningId: '2Q==' } },
+            },
+            buttonsMessage: {
+                contentText: body,
+                footerText: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」',
+                buttons,
+                headerType: imageMessage ? 'IMAGE' : 'EMPTY',
+                ...(imageMessage ? { imageMessage } : {}),
+            },
+        });
+        const wrapped = generateWAMessageFromContent(from, message, { userJid: sock.user?.id, quoted: msg });
+        await sock.relayMessage(from, wrapped.message, { messageId: wrapped.key.id });
         return true;
     } catch (error) {
         console.error('[play card]', error.message);
