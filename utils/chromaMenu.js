@@ -60,15 +60,15 @@ function buildChromaSurface({ cards, totalCmds }) {
     const components = [
         { id: 'root', component: 'Column', align: 'center', children: ['promotion', 'title', 'dividerTop', 'tableCard', 'dividerBottom', 'footer'] },
         { id: 'promotion', component: 'Card', child: 'promotionRow' },
-        { id: 'promotionRow', component: 'Row', align: 'center', children: ['promoTag', 'promoDivider', 'promotionColumn'] },
-        text('promoTag', '🏷️', 'h3'),
+        { id: 'promotionRow', component: 'Row', children: ['promoTag', 'promoDivider', 'promotionColumn'] },
+        text('promoTag', '🏷️', 'h5'),
         // The basic A2UI catalog has no Divider orientation prop. A text
         // glyph gives the same vertical visual separator without validation
         // errors on clients using the strict catalog schema.
         text('promoDivider', '│', 'caption'),
         { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCode'] },
-        text('promoName', PASQUA_BRAND, 'h4'),
-        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'body'),
+        text('promoName', PASQUA_BRAND, 'h5'),
+        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'caption'),
         text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'caption'),
         { id: 'title', component: 'Text', text: `꧁༺ ${PASQUA_BRAND} ༻꧂`, variant: 'h2' },
         { id: 'dividerTop', component: 'Divider' },
