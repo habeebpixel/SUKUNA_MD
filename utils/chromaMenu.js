@@ -39,6 +39,12 @@ const TELEGRAM_URL   = config.owner?.telegram
     ? `https://${String(config.owner.telegram).replace(/^https?:\/\//i, '')}`
     : 'https://t.me/Pasquaking';
 
+// Chroma-only campaign settings. They are environment-overridable so the
+// promotion can be changed without touching the other menu designs.
+const PASQUA_BRAND = 'PASQUA TECH';
+const COUPON_CODE = process.env.PASQUA_MENU_COUPON || 'PASQUA-TECH';
+const COUPON_EXPIRES_AT = process.env.PASQUA_MENU_COUPON_EXPIRES_AT || '2026-10-28T23:59:59+01:00';
+
 const CATEGORY_ORDER = ['owner', 'admin', 'moderation', 'economy', 'fun', 'media', 'ai', 'utility', 'group', 'general', 'unicode', 'textmaker', 'games', 'anime-nsfw', '18plus'];
 
 // WhatsApp's native-flow single_select renders as a bottom-sheet list.
@@ -109,19 +115,35 @@ function toBold(str) {
 //   total footer line
 // No box-drawing corners, no decorative glyphs — just consistent spacing
 // so it reads as one calm block instead of scattered lines.
-function buildMenuBody({ name, userTag, prefix, totalCmds, uptime, cards }) {
-    const RULE = '─'.repeat(28);
+function getCouponOffer(now = new Date()) {
+    const expiry = new Date(COUPON_EXPIRES_AT);
+    if (Number.isNaN(expiry.getTime()) || now > expiry) {
+        return { active: false, text: 'This limited-time offer has ended.' };
+    }
+
+    const endsOn = new Intl.DateTimeFormat('en-GB', {
+        day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos',
+    }).format(expiry);
+    return { active: true, code: COUPON_CODE, endsOn };
+}
+
+function buildMenuBody({ totalCmds, cards }) {
+    const RULE = '━━━━━━━━━━━━━━━━━━━━━━━━';
+    const coupon = getCouponOffer();
     const lines = [];
 
-    lines.push(toBold(name.toUpperCase()));
-    lines.push(RULE);
-
-    const info = [];
-    if (userTag) info.push(`User      : ${userTag}`);
-    if (prefix)  info.push(`Prefix    : ${prefix}`);
-    info.push(`Commands  : ${totalCmds}`);
-    if (uptime)  info.push(`Uptime    : ${uptime}`);
-    lines.push(...info);
+    lines.push(`┏${RULE}┓`);
+    lines.push(`┃ 🏷️  *${PASQUA_BRAND}*`);
+    if (coupon.active) {
+        lines.push('┃ Limited-Time Coupon');
+        lines.push(`┃ Code: *${coupon.code}*`);
+        lines.push(`┃ Ends on ${coupon.endsOn}`);
+    } else {
+        lines.push('┃ Limited-Time Coupon');
+        lines.push(`┃ ${coupon.text}`);
+    }
+    lines.push(`┗${RULE}┛`);
+    lines.push(`༺ ${toBold(PASQUA_BRAND)} ༻`);
     lines.push(RULE);
 
     if (cards.length) {
@@ -135,7 +157,7 @@ function buildMenuBody({ name, userTag, prefix, totalCmds, uptime, cards }) {
         lines.push(RULE);
     }
 
-    lines.push(`Total: ${totalCmds} commands`);
+    lines.push(`${PASQUA_BRAND} | ${totalCmds} Plugins`);
     return lines.join('\n');
 }
 
@@ -233,19 +255,18 @@ async function sendChromaMenu({
 }) {
     const cards = commandCards(commands);
     const totalCmds = cards.reduce((sum, card) => sum + card.commands.length, 0);
-    const name = botName || 'SUKUNA MD';
+    const name = PASQUA_BRAND;
 
-    // A caller-supplied caption (menu.js's design system) is used verbatim
-    // for backward compatibility; otherwise build the clean default body.
-    const body = caption && String(caption).trim()
-        ? String(caption)
-        : buildMenuBody({ name, userTag, prefix, totalCmds, uptime, cards });
+    // Chroma owns its own caption so legacy design captions cannot leak
+    // SUKUNA/MADARA branding into this design. Other menu designs are left
+    // untouched in menu.js and menuDesigns.js.
+    const body = buildMenuBody({ totalCmds, cards });
     const menuBody = body;
 
     const buttons = [
+        singleSelect(`Ξ OPEN MENU (${totalCmds})`, buildCategorySections(cards, prefix)),
         ctaUrl('1st-Channel', CHANNEL_URL),
         ctaUrl('2nd-Channel', TELEGRAM_URL),
-        singleSelect(`Open Menu (${totalCmds})`, buildCategorySections(cards, prefix)),
     ];
 
     try {
@@ -288,4 +309,15 @@ async function sendChromaMenu({
     }
 }
 
-module.exports = { sendChromaMenu, commandCards, MENU_IMAGE_URLS, CHANNEL_URL, TELEGRAM_URL };
+module.exports = {
+    sendChromaMenu,
+    commandCards,
+    buildMenuBody,
+    getCouponOffer,
+    MENU_IMAGE_URLS,
+    CHANNEL_URL,
+    TELEGRAM_URL,
+    PASQUA_BRAND,
+    COUPON_CODE,
+    COUPON_EXPIRES_AT,
+};
