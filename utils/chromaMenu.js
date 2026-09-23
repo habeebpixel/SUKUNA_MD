@@ -1,12 +1,10 @@
 'use strict';
 
-// Chroma uses WhatsApp's GenAI rich-response surface. This is deliberately
-// separate from the ordinary image/caption menu designs: the client receives
-// a unified-response surface containing text, image, widget actions, and URL
-// actions, rather than an HTML card or a native-flow caption approximation.
+// Chroma uses the hybrid message shown in the supplied eval snippet:
+// interactiveMessage.bloksWidget renders the A2UI visual surface, while
+// nativeFlowMessage keeps the real WhatsApp buttons underneath it.
 
-const crypto = require('crypto');
-const { generateWAMessageFromContent, proto } = require('@pasqua-baileys/baileys');
+const { generateWAMessageFromContent, prepareWAMessageMedia } = require('@pasqua-baileys/baileys');
 const config = require('../config');
 
 const MENU_IMAGE_URLS = [
@@ -19,6 +17,7 @@ const CHANNEL_URL = 'https://whatsapp.com/channel/0029Vb8YB2T90x2zvQLnEb2k';
 const TELEGRAM_URL = config.owner?.telegram
     ? `https://${String(config.owner.telegram).replace(/^https?:\/\//i, '')}`
     : 'https://t.me/Pasquaking';
+const PASQUA_BRAND = 'PASQUA TECH';
 const COUPON_CODE = process.env.PASQUA_MENU_COUPON || 'PASQUA TECH';
 const COUPON_EXPIRES_AT = process.env.PASQUA_MENU_COUPON_EXPIRES_AT || '2026-10-28T23:59:59+01:00';
 const CATEGORY_ORDER = ['owner', 'admin', 'moderation', 'economy', 'fun', 'media', 'ai', 'utility', 'group', 'general', 'unicode', 'textmaker', 'games', 'anime-nsfw', '18plus'];
@@ -52,102 +51,91 @@ function couponOffer(now = new Date()) {
     return { active: true, code: COUPON_CODE, endsOn: new Intl.DateTimeFormat('en-GB', { day: '2-digit', month: 'short', year: 'numeric', timeZone: 'Africa/Lagos' }).format(expiry) };
 }
 
-function actionRow(title, ctas) {
-    return {
-        __typename: 'GenAI3PExtWidgetPrimitive',
-        header: { __typename: 'GenAI3PExtWidgetStandardHeader', title },
-        body: {
-            __typename: 'GenAI3PExtCalendarEventList',
-            ctas,
-            sections: [],
-        },
-    };
+function text(id, value, variant = 'body') {
+    return { id, component: 'Text', text: value, variant };
 }
-function commandCta(label, command, prefix) {
-    return {
-        label,
-        state: 'PENDING',
-        kind: 'OTHER',
-        tool_call_id: `chroma:${prefix}${command}`,
-        toast: { label: `Opening ${prefix}${command}`, __typename: 'GenAI3PExtWidgetToast' },
-        __typename: 'GenAI3PExtWidgetCTA',
-    };
-}
-function buildRichChromaData({ caption, imageUrl, prefix, totalCmds, cards }) {
+function buildChromaSurface({ cards, totalCmds }) {
     const offer = couponOffer();
-    const promotion = offer.active
-        ? `🏷️ PASQUA TECH\nEnds on ${offer.endsOn}\nCode: ${offer.code} | INC.`
-        : offer.text;
-    const text = `${promotion}\n\n${caption || `PASQUA TECH | ${totalCmds} Plugins`}`;
-    const sections = [
-        {
-            __typename: 'GenAIUnifiedResponseSection',
-            view_model: {
-                __typename: 'GenAISingleLayoutViewModel',
-                primitive: { __typename: 'FOATextPrimitive', text },
-            },
-        },
-        {
-            __typename: 'GenAIUnifiedResponseSection',
-            view_model: {
-                __typename: 'GenAISingleLayoutViewModel',
-                primitive: {
-                    __typename: 'GenAIImagePrimitive',
-                    preview_image: { __typename: 'GenAIMediaItem', mime_type: 'image/jpeg', url: imageUrl },
-                    full_image: { __typename: 'GenAIMediaItem', mime_type: 'image/jpeg', url: imageUrl },
-                },
-            },
-        },
-        {
-            __typename: 'GenAIUnifiedResponseSection',
-            view_model: {
-                __typename: 'GenAIActionRowLayoutViewModel',
-                primitives: [actionRow(`Ξ OPEN MENU (${totalCmds})`, [commandCta(`Ξ OPEN MENU (${totalCmds})`, 'menu', prefix)])],
-            },
-        },
-        {
-            __typename: 'GenAIUnifiedResponseSection',
-            view_model: {
-                __typename: 'GenAIActionRowLayoutViewModel',
-                primitives: [
-                    actionRow('Promotion', offer.active ? [{
-                        label: 'COPY COUPON', state: 'COMPLETED', kind: 'OTHER', cta_type: 'COPY', copy_code: offer.code,
-                        toast: { label: 'Coupon copied', __typename: 'GenAI3PExtWidgetToast' },
-                        __typename: 'GenAI3PExtWidgetCTA',
-                    }] : []),
-                    { __typename: 'GenAIFooterActionPrimitive', cta_text: '1st-Channel', cta_type: 'OPEN_URL', cta_url: CHANNEL_URL },
-                    { __typename: 'GenAIFooterActionPrimitive', cta_text: '2nd-Channel', cta_type: 'OPEN_URL', cta_url: TELEGRAM_URL },
-                ],
-            },
-        },
+    const tableCats = cards.slice(0, 9);
+    const components = [
+        { id: 'root', component: 'Column', align: 'center', children: ['title', 'promotion', 'dividerTop', 'tableCard', 'dividerBottom', 'footer'] },
+        { id: 'title', component: 'Text', text: `༺ ${PASQUA_BRAND} ༻`, variant: 'h2' },
+        { id: 'promotion', component: 'Card', child: 'promotionColumn' },
+        { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCode'] },
+        text('promoName', `🏷️ ${PASQUA_BRAND}`, 'h4'),
+        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'body'),
+        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'caption'),
+        { id: 'dividerTop', component: 'Divider' },
+        { id: 'tableCard', component: 'Card', child: 'tableColumn' },
+        { id: 'tableColumn', component: 'Column', children: ['tableHeader', 'tableDivider', ...tableCats.flatMap((_, index) => [`row${index}`, `divider${index}`])] },
+        { id: 'tableHeader', component: 'Row', children: ['categoryHeader', 'countHeader'] },
+        text('categoryHeader', 'Category', 'h5'),
+        text('countHeader', 'Count', 'h5'),
+        { id: 'tableDivider', component: 'Divider' },
+        ...tableCats.flatMap((card, index) => [
+            { id: `row${index}`, component: 'Row', children: [`category${index}`, `count${index}`] },
+            text(`category${index}`, card.title),
+            text(`count${index}`, `${card.commands.length} cmds`),
+            { id: `divider${index}`, component: 'Divider' },
+        ]),
+        { id: 'dividerBottom', component: 'Divider' },
+        text('footer', `${PASQUA_BRAND} | ${totalCmds} Plugins`, 'caption'),
     ];
-    return { sections };
-}
-function buildChromaContent(options = {}) {
-    const data = Buffer.from(JSON.stringify(buildRichChromaData(options))).toString('base64');
-    return proto.Message.fromObject({
-        messageContextInfo: {
-            deviceListMetadataVersion: 2,
-            deviceListMetadata: {},
-            messageSecret: crypto.randomBytes(32),
+    return {
+        version: 'v0.9',
+        createSurface: {
+            surfaceId: 'pasqua-tech-chroma-v2',
+            catalogId: 'https://a2ui.org/specification/v0_9/catalogs/basic/catalog.json',
+            components,
         },
-        botForwardedMessage: {
-            message: {
-                richResponseMessage: {
-                    messageType: 1,
-                    submessages: [],
-                    unifiedResponse: { data },
-                    contextInfo: { isForwarded: true, forwardingScore: 1, forwardOrigin: 4 },
-                },
-            },
-        },
-    });
+    };
 }
 
-async function sendChromaMenu({ sock, jid, quoted, caption, prefix = '.', commands }) {
+function singleSelect(title, sections) {
+    return { name: 'single_select', buttonParamsJson: JSON.stringify({ title, sections }) };
+}
+function ctaUrl(displayText, url) {
+    return { name: 'cta_url', buttonParamsJson: JSON.stringify({ display_text: displayText, url, merchant_url: url }) };
+}
+function buildCategorySections(cards, prefix) {
+    return cards.slice(0, 10).map(card => ({
+        title: `${card.title.toUpperCase()} | ${card.commands.length} CMDS`,
+        highlight_label: '',
+        rows: card.commands.slice(0, 8).map(command => ({
+            header: '',
+            title: `${prefix}${command.name}`,
+            description: (command.description || `${card.title} command`).slice(0, 60),
+            id: `chroma:${prefix}${command.name}`,
+        })),
+    }));
+}
+
+function buildChromaContent({ imageMessage, surface, buttons }) {
+    return {
+        interactiveMessage: {
+            header: { imageMessage, hasMediaAttachment: true },
+            bloksWidget: {
+                type: 'im_a2ui',
+                data: JSON.stringify(surface),
+                fallback: PASQUA_BRAND,
+            },
+            nativeFlowMessage: { buttons, messageParamsJson: '' },
+        },
+    };
+}
+
+async function sendChromaMenu({ sock, jid, quoted, prefix = '.', commands }) {
     const cards = commandCards(commands);
     const totalCmds = cards.reduce((sum, card) => sum + card.commands.length, 0);
-    const content = buildChromaContent({ caption, prefix, commands, cards, totalCmds, imageUrl: nextMenuImage() });
+    const imageUrl = nextMenuImage();
+    const { imageMessage } = await prepareWAMessageMedia({ image: { url: imageUrl } }, { upload: sock.waUploadToServer });
+    const surface = buildChromaSurface({ cards, totalCmds });
+    const buttons = [
+        singleSelect(`Ξ OPEN MENU (${totalCmds})`, buildCategorySections(cards, prefix)),
+        ctaUrl('1st-Channel', CHANNEL_URL),
+        ctaUrl('2nd-Channel', TELEGRAM_URL),
+    ];
+    const content = buildChromaContent({ imageMessage, surface, buttons });
     const wrapped = generateWAMessageFromContent(jid, content, {
         userJid: sock.user?.id,
         quoted: quoted?.message ? quoted : undefined,
@@ -156,4 +144,4 @@ async function sendChromaMenu({ sock, jid, quoted, caption, prefix = '.', comman
     return wrapped;
 }
 
-module.exports = { sendChromaMenu, commandCards, couponOffer, buildRichChromaData, buildChromaContent, MENU_IMAGE_URLS, CHANNEL_URL, TELEGRAM_URL, COUPON_CODE, COUPON_EXPIRES_AT };
+module.exports = { sendChromaMenu, commandCards, couponOffer, buildChromaSurface, buildChromaContent, MENU_IMAGE_URLS, CHANNEL_URL, TELEGRAM_URL, PASQUA_BRAND, COUPON_CODE, COUPON_EXPIRES_AT };
