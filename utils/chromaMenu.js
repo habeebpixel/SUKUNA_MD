@@ -66,12 +66,13 @@ function buildChromaSurface({ cards, totalCmds }) {
         // glyph gives the same vertical visual separator without validation
         // errors on clients using the strict catalog schema.
         text('promoDivider', '│', 'caption'),
-        { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCode'] },
-        text('promoName', PASQUA_BRAND, 'h5'),
+        { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCodeDivider', 'promoCode'] },
+        text('promoName', 'ᴘᴀsǫᴜᴀ ᴛᴇᴄʜ', 'h5'),
         text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'caption'),
-        // The catalog's caption style is rendered too dark on this surface;
-        // body is the light foreground style used by the reference offer.
-        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'body'),
+        { id: 'promoCodeDivider', component: 'Divider' },
+        // h5 is the catalog's light heading style; caption/body can inherit
+        // the dark card foreground on some WhatsApp A2UI clients.
+        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'h5'),
         { id: 'title', component: 'Text', text: `꧁༺ ${PASQUA_BRAND} ༻꧂`, variant: 'h2' },
         { id: 'dividerTop', component: 'Divider' },
         { id: 'tableCard', component: 'Card', child: 'tableColumn' },
