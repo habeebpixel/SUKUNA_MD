@@ -239,6 +239,15 @@ async function sendChromaMenu({
     const body = caption && String(caption).trim()
         ? String(caption)
         : buildMenuBody({ name, userTag, prefix, totalCmds, uptime, cards });
+    const coupon = [
+        '🎟️  SUKUNA MD COUPON',
+        '━━━━━━━━━━━━━━━━━━━━',
+        'USE CODE: SUKUNA2026',
+        'STATUS  : ACTIVE',
+        'ENDS ON : NOV 2026',
+        '━━━━━━━━━━━━━━━━━━━━',
+    ].join('\n');
+    const menuBody = `${body}\n\n${coupon}`;
 
     const buttons = [
         ctaUrl('1st-Channel', CHANNEL_URL),
@@ -251,7 +260,7 @@ async function sendChromaMenu({
 
         const interactiveMessage = proto.Message.InteractiveMessage.fromObject({
             header,
-            body: { text: body },
+            body: { text: menuBody },
             nativeFlowMessage: { buttons, messageParamsJson: '' },
         });
 
@@ -278,7 +287,7 @@ async function sendChromaMenu({
         // codebase uses (see peek.js) — the menu still reaches the user
         // even if the interactive buttons fail to build on this client.
         return sock.sendMessage(jid, {
-            text: `${body}\n\n🔗 ${CHANNEL_URL}\n✈️ ${TELEGRAM_URL}`,
+            text: `${menuBody}\n\n🔗 ${CHANNEL_URL}\n✈️ ${TELEGRAM_URL}`,
         }, quoted?.message ? { quoted } : undefined);
     }
 }
