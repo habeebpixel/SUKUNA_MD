@@ -83,9 +83,9 @@ module.exports = {
         }
 
         // ── Save to DB & confirm ─────────────────────────────────────────────
-        const existing = stickerHash ? database.getStickerCmd(from, stickerHash) : database.getEmojiCmd(from, emojiKey);
-        if (stickerHash) database.setStickerCmd(from, stickerHash, commandName);
-        else database.setEmojiCmd(from, emojiKey, commandName);
+        const existing = stickerHash ? database.getGlobalStickerCmd(stickerHash) : database.getGlobalEmojiCmd(emojiKey);
+        if (stickerHash) database.setGlobalStickerCmd(stickerHash, commandName);
+        else database.setGlobalEmojiCmd(emojiKey, commandName);
         const target = stickerHash ? 'sticker' : `emoji ${emojiKey}`;
 
         if (existing) {

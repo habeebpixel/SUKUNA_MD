@@ -49,12 +49,12 @@ module.exports = {
             return reply('❌ Reply to a sticker or emoji with .unsetcmd.');
         }
 
-        const existing = stickerHash ? database.getStickerCmd(from, stickerHash) : database.getEmojiCmd(from, emojiKey);
+        const existing = stickerHash ? database.getGlobalStickerCmd(stickerHash) : database.getGlobalEmojiCmd(emojiKey);
         if (!existing) {
             return reply(`⚠️ This ${stickerHash ? 'sticker' : `emoji ${emojiKey}`} has no command binding. Nothing to remove.`);
         }
 
-        const deleted = stickerHash ? database.deleteStickerCmd(from, stickerHash) : database.deleteEmojiCmd(from, emojiKey);
+        const deleted = stickerHash ? database.deleteGlobalStickerCmd(stickerHash) : database.deleteGlobalEmojiCmd(emojiKey);
 
         if (deleted) {
             reply(

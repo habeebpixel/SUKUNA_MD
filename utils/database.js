@@ -800,12 +800,35 @@ class Database {
 
     getStickerCmd(groupId, stickerHash) {
         const group = this.getGroup(groupId);
-        return group.stickerCmds?.[stickerHash] || null;
+        return this.getGlobalStickerCmd(stickerHash) || group.stickerCmds?.[stickerHash] || null;
     }
 
     getAllStickerCmds(groupId) {
         const group = this.getGroup(groupId);
-        return group.stickerCmds || {};
+        return { ...this.getGlobalStickerCmds(), ...(group.stickerCmds || {}) };
+    }
+
+    setGlobalStickerCmd(stickerHash, responseText) {
+        if (!this.data.settings.globalStickerCmds) this.data.settings.globalStickerCmds = {};
+        this.data.settings.globalStickerCmds[stickerHash] = responseText;
+        this.save('settings');
+    }
+
+    deleteGlobalStickerCmd(stickerHash) {
+        const bindings = this.data.settings.globalStickerCmds || {};
+        if (!bindings[stickerHash]) return false;
+        delete bindings[stickerHash];
+        this.data.settings.globalStickerCmds = bindings;
+        this.save('settings');
+        return true;
+    }
+
+    getGlobalStickerCmd(stickerHash) {
+        return this.data.settings.globalStickerCmds?.[stickerHash] || null;
+    }
+
+    getAllGlobalStickerCmds() {
+        return this.data.settings.globalStickerCmds || {};
     }
 
     // ── Emoji Custom Commands ────────────────────────────────────────────────
@@ -828,12 +851,35 @@ class Database {
 
     getEmojiCmd(groupId, emoji) {
         const group = this.getGroup(groupId);
-        return group.emojiCmds?.[emoji] || null;
+        return this.getGlobalEmojiCmd(emoji) || group.emojiCmds?.[emoji] || null;
     }
 
     getAllEmojiCmds(groupId) {
         const group = this.getGroup(groupId);
-        return group.emojiCmds || {};
+        return { ...this.getAllGlobalEmojiCmds(), ...(group.emojiCmds || {}) };
+    }
+
+    setGlobalEmojiCmd(emoji, responseText) {
+        if (!this.data.settings.globalEmojiCmds) this.data.settings.globalEmojiCmds = {};
+        this.data.settings.globalEmojiCmds[emoji] = responseText;
+        this.save('settings');
+    }
+
+    deleteGlobalEmojiCmd(emoji) {
+        const bindings = this.data.settings.globalEmojiCmds || {};
+        if (!bindings[emoji]) return false;
+        delete bindings[emoji];
+        this.data.settings.globalEmojiCmds = bindings;
+        this.save('settings');
+        return true;
+    }
+
+    getGlobalEmojiCmd(emoji) {
+        return this.data.settings.globalEmojiCmds?.[emoji] || null;
+    }
+
+    getAllGlobalEmojiCmds() {
+        return this.data.settings.globalEmojiCmds || {};
     }
 
     // ── Mention React — keyed by the user's own phone number ──────────────
