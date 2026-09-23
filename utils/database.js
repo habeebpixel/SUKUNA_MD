@@ -808,6 +808,34 @@ class Database {
         return group.stickerCmds || {};
     }
 
+    // ── Emoji Custom Commands ────────────────────────────────────────────────
+    setEmojiCmd(groupId, emoji, responseText) {
+        const group = this.getGroup(groupId);
+        if (!group.emojiCmds) group.emojiCmds = {};
+        group.emojiCmds[emoji] = responseText;
+        this.setGroup(groupId, 'emojiCmds', group.emojiCmds);
+    }
+
+    deleteEmojiCmd(groupId, emoji) {
+        const group = this.getGroup(groupId);
+        if (group.emojiCmds && group.emojiCmds[emoji]) {
+            delete group.emojiCmds[emoji];
+            this.setGroup(groupId, 'emojiCmds', group.emojiCmds);
+            return true;
+        }
+        return false;
+    }
+
+    getEmojiCmd(groupId, emoji) {
+        const group = this.getGroup(groupId);
+        return group.emojiCmds?.[emoji] || null;
+    }
+
+    getAllEmojiCmds(groupId) {
+        const group = this.getGroup(groupId);
+        return group.emojiCmds || {};
+    }
+
     // ── Mention React — keyed by the user's own phone number ──────────────
     // phoneNumber = bot session, userPhone = owner or mod's own number
     getMentionReact(phoneNumber, userPhone) {

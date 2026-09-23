@@ -240,8 +240,7 @@ async function sendChromaMenu({
     const body = caption && String(caption).trim()
         ? String(caption)
         : buildMenuBody({ name, userTag, prefix, totalCmds, uptime, cards });
-    const offerBody = '🏷️  MADARA APEX\nEnds on Oct 23\nCode: MADARA APEX | INC.';
-    const menuBody = `${offerBody}\n\n${body}`;
+    const menuBody = body;
 
     const buttons = [
         ctaUrl('1st-Channel', CHANNEL_URL),
@@ -264,10 +263,6 @@ async function sendChromaMenu({
                     messageContextInfo: {
                         deviceListMetadataVersion: 2,
                         deviceListMetadata: {},
-                        botMetadata: {
-                            botRenderingConfigMetadata: { bloksVersioningId: '2Q==' },
-                            botPromotionMessageMetadata: { promotionType: 'C50', buttonTitle: 'View Menu' },
-                        },
                     },
                     interactiveMessage,
                 },

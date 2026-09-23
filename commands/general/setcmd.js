@@ -12,12 +12,13 @@
 
 const database     = require('../../utils/database');
 const commandLoader = require('../../utils/commandLoader');
+const { isEmojiOnly, quotedText, stickerHash: getStickerHash } = require('../../utils/customCommandTriggers');
 
 module.exports = {
     name:        'setcmd',
     aliases:     ['stickercmd', 'bindcmd'],
-    description: 'Bind a bot command to a sticker',
-    usage:       '.setcmd <command>  (reply to the target sticker)',
+    description: 'Bind a bot command to a sticker or emoji',
+    usage:       '.setcmd <command>  (reply to a sticker or emoji)',
     category:    'general',
 
     async execute({ sock, msg, from, reply, args, isGroup }) {
@@ -26,14 +27,14 @@ module.exports = {
         const commandName = args[0]?.toLowerCase().trim();
         if (!commandName) {
             return reply(
-                '📌 *Set Sticker Command*\n\n' +
-                'Reply to a sticker, then type:\n' +
+                '📌 *Set Sticker/Emoji Command*\n\n' +
+                'Reply to a sticker or emoji, then type:\n' +
                 '*.setcmd <command name>*\n\n' +
-                'Every time that sticker is sent the bot will auto-run the command.\n\n' +
+                'Every time that sticker or emoji is sent the bot will auto-run the command.\n\n' +
                 '_Example:_ *.setcmd ping*\n' +
                 '_Example:_ *.setcmd alive*\n\n' +
-                'Use *.unsetcmd* (reply to sticker) to remove.\n' +
-                'Use *.cmdlist* to see all sticker bindings.'
+                'Use *.unsetcmd* (reply to the sticker or emoji) to remove.\n' +
+                'Use *.cmdlist* to see all bindings.'
             );
         }
 
@@ -47,19 +48,22 @@ module.exports = {
             );
         }
 
-        // ── Extract sticker hash from the quoted message ─────────────────────
+        // ── Extract a sticker hash or emoji from the quoted message ───────────
         const ctx = msg.message?.extendedTextMessage?.contextInfo;
         if (!ctx) {
-            return reply('❌ Please *reply to a sticker* with .setcmd <command>');
+            return reply('❌ Please *reply to a sticker or emoji* with .setcmd <command>');
         }
 
         let stickerHash = null;
+        let emojiKey = null;
 
         // Try inline quoted message first
         const inline = ctx?.quotedMessage?.stickerMessage;
         if (inline) {
-            const id = inline.fileSha256 || inline.fileEncSha256;
-            if (id) stickerHash = Buffer.from(id).toString('base64');
+            stickerHash = getStickerHash(inline);
+        } else {
+            const quotedEmoji = quotedText(ctx?.quotedMessage);
+            if (isEmojiOnly(quotedEmoji)) emojiKey = quotedEmoji;
         }
 
         // Fall back to loading the full quoted message
@@ -68,33 +72,37 @@ module.exports = {
                 const loaded = await sock.loadMessage(ctx.remoteJid || from, ctx.stanzaId);
                 const sd     = loaded?.message?.stickerMessage;
                 if (sd) {
-                    const id = sd.fileSha256 || sd.fileEncSha256;
-                    if (id) stickerHash = Buffer.from(id).toString('base64');
+                    stickerHash = getStickerHash(sd);
+                } else {
+                    const loadedEmoji = quotedText(loaded?.message);
+                    if (isEmojiOnly(loadedEmoji)) emojiKey = loadedEmoji;
                 }
             } catch (_) {}
         }
 
-        if (!stickerHash) {
-            return reply('❌ The quoted message is not a sticker. Please reply to a sticker.');
+        if (!stickerHash && !emojiKey) {
+            return reply('❌ Reply to a sticker or emoji. Example: reply to ❤️ with .setcmd menu');
         }
 
         // ── Save to DB & confirm ─────────────────────────────────────────────
-        const existing = database.getStickerCmd(from, stickerHash);
-        database.setStickerCmd(from, stickerHash, commandName);
+        const existing = stickerHash ? database.getStickerCmd(from, stickerHash) : database.getEmojiCmd(from, emojiKey);
+        if (stickerHash) database.setStickerCmd(from, stickerHash, commandName);
+        else database.setEmojiCmd(from, emojiKey, commandName);
+        const target = stickerHash ? 'sticker' : `emoji ${emojiKey}`;
 
         if (existing) {
             reply(
-                '✏️ *Sticker Command Updated!*\n\n' +
+                '✏️ *Custom Command Updated!*\n\n' +
                 `Old: \`${existing}\`\n` +
                 `New: \`${commandName}\`\n\n` +
-                'Sending this sticker will now trigger *.' + commandName + '*.'
+                `Sending this ${target} will now trigger *.${commandName}*.`
             );
         } else {
             reply(
-                '✅ *Sticker Command Set!*\n\n' +
+                '✅ *Custom Command Set!*\n\n' +
                 `Command: \`.${commandName}\`\n\n` +
-                'Whenever this sticker is sent, the bot will automatically run *.' + commandName + '*.\n\n' +
-                '_Use .unsetcmd (reply to sticker) to remove it._'
+                `Whenever this ${target} is sent, the bot will automatically run *.${commandName}*.\n\n` +
+                '_Use .unsetcmd (reply to the sticker or emoji) to remove it._'
             );
         }
     },

@@ -6,12 +6,13 @@
 'use strict';
 
 const database = require('../../utils/database');
+const { isEmojiOnly, quotedText, stickerHash: getStickerHash } = require('../../utils/customCommandTriggers');
 
 module.exports = {
     name:        'unsetcmd',
     aliases:     ['removecmd', 'unbindcmd', 'delcmd', 'deletecmd'],
-    description: 'Remove the bot command bound to a sticker',
-    usage:       '.unsetcmd  (reply to the target sticker)',
+    description: 'Remove the bot command bound to a sticker or emoji',
+    usage:       '.unsetcmd  (reply to a sticker or emoji)',
     category:    'general',
 
     async execute({ sock, msg, from, reply, isGroup }) {
@@ -19,15 +20,18 @@ module.exports = {
 
         const ctx = msg.message?.extendedTextMessage?.contextInfo;
         if (!ctx) {
-            return reply('❌ Please *reply to a sticker* with .unsetcmd to remove its binding.');
+            return reply('❌ Please *reply to a sticker or emoji* with .unsetcmd to remove its binding.');
         }
 
         let stickerHash = null;
+        let emojiKey = null;
 
         const inline = ctx?.quotedMessage?.stickerMessage;
         if (inline) {
-            const id = inline.fileSha256 || inline.fileEncSha256;
-            if (id) stickerHash = Buffer.from(id).toString('base64');
+            stickerHash = getStickerHash(inline);
+        } else {
+            const quotedEmoji = quotedText(ctx?.quotedMessage);
+            if (isEmojiOnly(quotedEmoji)) emojiKey = quotedEmoji;
         }
 
         if (!stickerHash) {
@@ -35,29 +39,31 @@ module.exports = {
                 const loaded = await sock.loadMessage(ctx.remoteJid || from, ctx.stanzaId);
                 const sd     = loaded?.message?.stickerMessage;
                 if (sd) {
-                    const id = sd.fileSha256 || sd.fileEncSha256;
-                    if (id) stickerHash = Buffer.from(id).toString('base64');
+                    stickerHash = getStickerHash(sd);
+                } else {
+                    const loadedEmoji = quotedText(loaded?.message);
+                    if (isEmojiOnly(loadedEmoji)) emojiKey = loadedEmoji;
                 }
             } catch (_) {}
         }
 
-        if (!stickerHash) {
-            return reply('❌ The quoted message is not a sticker. Please reply to a sticker.');
+        if (!stickerHash && !emojiKey) {
+            return reply('❌ Reply to a sticker or emoji with .unsetcmd.');
         }
 
-        const existing = database.getStickerCmd(from, stickerHash);
+        const existing = stickerHash ? database.getStickerCmd(from, stickerHash) : database.getEmojiCmd(from, emojiKey);
         if (!existing) {
-            return reply('⚠️ This sticker has no command binding. Nothing to remove.');
+            return reply(`⚠️ This ${stickerHash ? 'sticker' : `emoji ${emojiKey}`} has no command binding. Nothing to remove.`);
         }
 
-        const deleted = database.deleteStickerCmd(from, stickerHash);
+        const deleted = stickerHash ? database.deleteStickerCmd(from, stickerHash) : database.deleteEmojiCmd(from, emojiKey);
 
         if (deleted) {
             reply(
-                '🗑️ *Sticker Command Removed!*\n\n' +
+                '🗑️ *Custom Command Removed!*\n\n' +
                 `The binding to \`.${existing}\` has been deleted.\n\n` +
-                'This sticker will no longer trigger any bot command.\n\n' +
-                '_Use .setcmd (reply to a sticker) to create a new binding._'
+                'This sticker or emoji will no longer trigger any bot command.\n\n' +
+                '_Use .setcmd (reply to a sticker or emoji) to create a new binding._'
             );
         } else {
             reply('❌ Failed to remove the binding. Please try again.');
