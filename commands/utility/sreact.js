@@ -4,6 +4,7 @@
 // `.sreact` to attach the sticker reaction to that message. The relay shape
 // follows WhatsApp's messageAssociation payload supplied by the owner.
 const enabledChats = new Set();
+const USE_ASSOCIATED_REACTION = /^(1|true|yes)$/i.test(String(process.env.SREACT_ASSOCIATED || ''));
 
 const STICKER_MESSAGE = {
     url: 'https://mmg.whatsapp.net/v/t62.15575-24/818766779_1129097639778153_6590267083545743956_n.enc?ccb=11-4&oh=01_Q5Aa5gHNe2HdbLE-cWkJXND2kbQ-dPCK_OUE8yMZftwYLe7BsQ&oe=6ADAC196&_nc_sid=5e03e0&mms3=true',
@@ -60,17 +61,24 @@ module.exports = {
             return reply('❌ Sticker reaction relay is unavailable on this connection.');
         }
 
-        await sock.relayMessage(from, {
-            messageContextInfo: {
-                messageAssociation: {
-                    associationType: 11,
-                    parentMessageKey,
+        // associationType 11 is a newer WhatsApp reaction envelope. Older
+        // clients show it as “unsupported message”, so normal sticker relay
+        // is the safe default. Enable SREACT_ASSOCIATED=true only when every
+        // recipient client supports associated reactions.
+        const payload = USE_ASSOCIATED_REACTION
+            ? {
+                messageContextInfo: {
+                    messageAssociation: {
+                        associationType: 11,
+                        parentMessageKey,
+                    },
                 },
-            },
-            stickerMessage: { ...STICKER_MESSAGE },
-        }, {});
+                stickerMessage: { ...STICKER_MESSAGE },
+            }
+            : { stickerMessage: { ...STICKER_MESSAGE } };
+        await sock.relayMessage(from, payload, { messageId: `sreact-${Date.now()}` });
         return true;
     },
 
-    _state: { enabledChats, STICKER_MESSAGE, targetKey },
+    _state: { enabledChats, STICKER_MESSAGE, targetKey, USE_ASSOCIATED_REACTION },
 };
