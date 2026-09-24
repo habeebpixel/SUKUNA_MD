@@ -253,6 +253,17 @@ async function fetchThumbnailBuffer(url) {
     } catch (_) { return null; }
 }
 
+async function preparePlaySelection(video) {
+    if (!video?.url || video.spotifyUrl) return video;
+    try {
+        const downloadUrl = await getDirectUrl(video.url, ['18', 'best'], 'mp3');
+        return { ...video, downloadUrl };
+    } catch (error) {
+        console.warn('[play] prefetch MP3 URL failed; will retry on tap:', error.message);
+        return video;
+    }
+}
+
 async function sendFormatCard({ sock, msg, from, video, prefix = '.' }) {
     const body = [
         `🎬 *${video.title}*`,
@@ -301,7 +312,9 @@ async function downloadAndSend({ sock, msg, from, selection, type }) {
         await sock.sendMessage(from, { audio, mimetype: rapid.mimetype || 'audio/mpeg', fileName: `${safeFileName(title)}.mp3`, ptt: false }, { quoted: msg });
         return;
     }
-    const source = await getDirectUrl(selection.url, type === 'mp3' ? ['18', 'best'] : ['18', 'best[height<=360]', 'best'], type);
+    const source = type === 'mp3' && selection.downloadUrl
+        ? selection.downloadUrl
+        : await getDirectUrl(selection.url, type === 'mp3' ? ['18', 'best'] : ['18', 'best[height<=360]', 'best'], type);
     const sourceBuffer = await fetchBuffer(source, type === 'mp3' ? MAX_AUDIO_BYTES : MAX_VIDEO_BYTES);
     if (type === 'mp3') {
         const audio = await convertToMp3(sourceBuffer);
@@ -350,8 +363,8 @@ async function handleLegacyButton(buttonId, { sock, msg, from }) {
     const type = match ? (match[1].toLowerCase() === 'ytmp3' ? 'mp3' : 'mp4') : (label === 'MP3' ? 'mp3' : 'mp4');
     const selection = match
         ? (SPOTIFY_URL_RE.test(match[2].trim())
-            ? { spotifyUrl: match[2].trim(), title: cached?.title || 'Spotify track' }
-            : { url: normalizeYoutubeUrl(match[2].trim()), title: cached?.title || 'YouTube media' })
+            ? { ...(cached || {}), spotifyUrl: match[2].trim(), title: cached?.title || 'Spotify track' }
+            : { ...(cached || {}), url: normalizeYoutubeUrl(match[2].trim()), title: cached?.title || 'YouTube media' })
         : cached;
     if (!selection || selection.expiresAt < Date.now()) {
         await sock.sendMessage(from, { text: '⏳ This play selection expired. Run `.play <song>` again.' }, { quoted: msg });
@@ -392,7 +405,7 @@ module.exports = {
         await reply(`🔍 Searching YouTube for: *${query}*...`);
         await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } }).catch(() => {});
         try {
-            const video = await resolveVideo(query);
+            const video = await preparePlaySelection(await resolveVideo(query));
             await sendFormatCard({ sock, msg, from, video, prefix });
             await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
         } catch (error) {
