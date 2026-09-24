@@ -19,6 +19,7 @@ const RAPIDAPI_HOST_OVERRIDE = 'spotify-music-mp3-downloader-api.p.rapidapi.com'
 const RAPIDAPI_SPOTIFY_HOST = process.env.RAPIDAPI_SPOTIFY_HOST || RAPIDAPI_HOST_OVERRIDE || 'spotify-music-mp3-downloader-api.p.rapidapi.com';
 const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
 const SPOTIFY_URL_RE = /^https?:\/\/open\.spotify\.com\/track\/[A-Za-z0-9]+/i;
+const recentPlaySelections = new Map();
 let youtubeDl;
 
 function getYoutubeDl() {
@@ -262,6 +263,7 @@ async function sendFormatCard({ sock, msg, from, video, prefix = '.' }) {
     ].filter(Boolean).join('\n');
     const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
     const sourceUrl = video.url || video.spotifyUrl || '';
+    recentPlaySelections.set(from, { ...video, expiresAt: Date.now() + 15 * 60 * 1000 });
     await sock.relayMessage(from, {
         buttonsMessage: {
             text: body,
@@ -339,13 +341,22 @@ function recoverLegacyButtonId(buttonId, msg) {
 
 async function handleLegacyButton(buttonId, { sock, msg, from }) {
     const recovered = recoverLegacyButtonId(buttonId, msg);
-    const match = String(recovered || '').match(/^\.(ytmp3|ytmp4|ymp4)\s+(.+)$/i);
-    if (!match) return false;
-    const type = match[1].toLowerCase() === 'ytmp3' ? 'mp3' : 'mp4';
-    const source = String(match[2]).trim();
-    const selection = SPOTIFY_URL_RE.test(source)
-        ? { spotifyUrl: source, title: 'Spotify track' }
-        : { url: normalizeYoutubeUrl(source), title: 'YouTube media' };
+    const direct = String(recovered || '').trim();
+    const match = direct.match(/^\.(ytmp3|ytmp4|ymp4)\s+(.+)$/i);
+    const label = direct.toUpperCase();
+    const cached = recentPlaySelections.get(from);
+    if (!match && label !== 'MP3' && label !== 'MP4') return false;
+    if (cached?.expiresAt < Date.now()) recentPlaySelections.delete(from);
+    const type = match ? (match[1].toLowerCase() === 'ytmp3' ? 'mp3' : 'mp4') : (label === 'MP3' ? 'mp3' : 'mp4');
+    const selection = match
+        ? (SPOTIFY_URL_RE.test(match[2].trim())
+            ? { spotifyUrl: match[2].trim(), title: cached?.title || 'Spotify track' }
+            : { url: normalizeYoutubeUrl(match[2].trim()), title: cached?.title || 'YouTube media' })
+        : cached;
+    if (!selection || selection.expiresAt < Date.now()) {
+        await sock.sendMessage(from, { text: '⏳ This play selection expired. Run `.play <song>` again.' }, { quoted: msg });
+        return true;
+    }
     await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } }).catch(() => {});
     try {
         await downloadAndSend({ sock, msg, from, selection, type });
