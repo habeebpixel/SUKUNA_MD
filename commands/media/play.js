@@ -5,7 +5,6 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
-const { prepareWAMessageMedia } = require('@pasqua-baileys/baileys');
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
@@ -263,28 +262,21 @@ async function sendFormatCard({ sock, msg, from, video, prefix = '.' }) {
     ].filter(Boolean).join('\n');
     const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
     const sourceUrl = video.url || video.spotifyUrl || '';
-    let imageMessage;
-    if (thumbnail) {
-        try {
-            ({ imageMessage } = await prepareWAMessageMedia(
-                { image: thumbnail },
-                { upload: sock.waUploadToServer },
-            ));
-        } catch (error) {
-            console.warn('[play preview] thumbnail upload failed:', error.message);
-        }
-    }
     await sock.relayMessage(from, {
         buttonsMessage: {
             text: body,
             contentText: body,
             footerText: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」',
-            ...(imageMessage ? { imageMessage } : {}),
+            locationMessage: {
+                name: video.title,
+                address: 'YouTube Download',
+                jpegThumbnail: thumbnail || undefined,
+            },
             buttons: [
                 { buttonId: `${prefix}ytmp3 ${sourceUrl}`, buttonText: { displayText: 'MP3' }, type: 1 },
                 { buttonId: `${prefix}ymp4 ${sourceUrl}`, buttonText: { displayText: 'MP4' }, type: 1 },
             ],
-            headerType: imageMessage ? 4 : 2,
+            headerType: 6,
         },
     }, {
         additionalNodes: [{
@@ -350,7 +342,7 @@ async function handleLegacyButton(buttonId, { sock, msg, from }) {
     const selection = SPOTIFY_URL_RE.test(source)
         ? { spotifyUrl: source, title: 'Spotify track' }
         : { url: normalizeYoutubeUrl(source), title: 'YouTube media' };
-    await sock.sendMessage(from, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
+    await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } }).catch(() => {});
     try {
         await downloadAndSend({ sock, msg, from, selection, type });
         await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
