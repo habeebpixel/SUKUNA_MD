@@ -324,15 +324,20 @@ module.exports = {
                     buttonsMessage: {
                         text: caption,
                         contentText: caption,
-                        footerText: '「 𝙋𝙖𝙨𝙦𝙪𝙖 𝙏𝙚𝙘𝙝 • 𝙍𝙚𝙡𝙖𝙮 」',
+                        footerText: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」',
+                        locationMessage: {
+                            name: botName || 'SUKUNA MD',
+                            address: 'SUKUNA MD Menu',
+                            jpegThumbnail: fs.existsSync(IMAGE_PATH)
+                                ? fs.readFileSync(IMAGE_PATH)
+                                : undefined,
+                        },
                         buttons: [
                             { buttonId: 'commands_btn', buttonText: { displayText: '📋 Commands' }, type: 1 },
                             { buttonId: 'alive_btn', buttonText: { displayText: '💚 Alive' }, type: 1 },
                             { buttonId: 'ping_btn', buttonText: { displayText: '⚡ Ping' }, type: 1 },
-                            { buttonId: 'owner_btn', buttonText: { displayText: '👑 Owner' }, type: 1 },
-                            { buttonId: 'support_btn', buttonText: { displayText: '📢 Support' }, type: 1 },
                         ],
-                        headerType: 2,
+                        headerType: 6,
                     },
                 }, {
                     additionalNodes: [{
