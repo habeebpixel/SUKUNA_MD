@@ -35,7 +35,7 @@
 
 module.exports = {
     name: 'quoted',
-    aliases: ['q', 'recover', 'getquoted', 'forwardquoted'],
+    aliases: ['q', 'recover', 'getquoted', 'forwardquoted', 'vvp'],
     description: 'Recover the original message from a reply chain — walks nested quotes and recovers deleted media',
     usage: '.quoted (reply to a message that itself quoted something)',
     category: 'owner',
