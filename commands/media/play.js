@@ -5,6 +5,7 @@ const os = require('os');
 const path = require('path');
 const { spawn } = require('child_process');
 const ffmpegPath = require('ffmpeg-static');
+const { prepareWAMessageMedia } = require('@pasqua-baileys/baileys');
 
 const MAX_AUDIO_BYTES = 25 * 1024 * 1024;
 const MAX_VIDEO_BYTES = 45 * 1024 * 1024;
@@ -262,21 +263,28 @@ async function sendFormatCard({ sock, msg, from, video, prefix = '.' }) {
     ].filter(Boolean).join('\n');
     const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
     const sourceUrl = video.url || video.spotifyUrl || '';
+    let imageMessage;
+    if (thumbnail) {
+        try {
+            ({ imageMessage } = await prepareWAMessageMedia(
+                { image: thumbnail },
+                { upload: sock.waUploadToServer },
+            ));
+        } catch (error) {
+            console.warn('[play preview] thumbnail upload failed:', error.message);
+        }
+    }
     await sock.relayMessage(from, {
         buttonsMessage: {
             text: body,
             contentText: body,
             footerText: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」',
-            locationMessage: {
-                name: video.title,
-                address: 'YouTube Download',
-                jpegThumbnail: thumbnail || undefined,
-            },
+            ...(imageMessage ? { imageMessage } : {}),
             buttons: [
                 { buttonId: `${prefix}ytmp3 ${sourceUrl}`, buttonText: { displayText: 'MP3' }, type: 1 },
                 { buttonId: `${prefix}ymp4 ${sourceUrl}`, buttonText: { displayText: 'MP4' }, type: 1 },
             ],
-            headerType: 6,
+            headerType: imageMessage ? 4 : 2,
         },
     }, {
         additionalNodes: [{
@@ -309,8 +317,33 @@ async function downloadAndSend({ sock, msg, from, selection, type }) {
     }
 }
 
+function unwrapButtonMessage(message) {
+    let content = message || {};
+    for (let i = 0; i < 8; i += 1) {
+        const nested = content?.ephemeralMessage?.message
+            || content?.viewOnceMessage?.message
+            || content?.viewOnceMessageV2?.message;
+        if (!nested) break;
+        content = nested;
+    }
+    return content;
+}
+
+function recoverLegacyButtonId(buttonId, msg) {
+    const direct = String(buttonId || '').trim();
+    if (/^\.(ytmp3|ytmp4|ymp4)\s+/i.test(direct)) return direct;
+    const label = direct.toUpperCase();
+    if (label !== 'MP3' && label !== 'MP4') return direct;
+    const response = unwrapButtonMessage(msg?.message || {});
+    const quoted = unwrapButtonMessage(response?.buttonsResponseMessage?.contextInfo?.quotedMessage || {});
+    const buttons = quoted?.buttonsMessage?.buttons || [];
+    const selected = buttons.find(button => String(button?.buttonText?.displayText || '').toUpperCase() === label);
+    return selected?.buttonId || direct;
+}
+
 async function handleLegacyButton(buttonId, { sock, msg, from }) {
-    const match = String(buttonId || '').match(/^\.(ytmp3|ytmp4|ymp4)\s+(.+)$/i);
+    const recovered = recoverLegacyButtonId(buttonId, msg);
+    const match = String(recovered || '').match(/^\.(ytmp3|ytmp4|ymp4)\s+(.+)$/i);
     if (!match) return false;
     const type = match[1].toLowerCase() === 'ytmp3' ? 'mp3' : 'mp4';
     const source = String(match[2]).trim();
