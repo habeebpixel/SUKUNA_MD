@@ -17,7 +17,7 @@ const DESIGNS = [
     'crimson', 'oracle', 'glitch', 'runic', 'obsidian',
     'vapor', 'mirage', 'eclipse', 'phantom', 'monolith',
     // ── Interactive design (renders quick-reply buttons via @pasqua-baileys/baileys) ──
-    'chroma',
+    'chroma', 'relay',
     // ── Pasqua signature designs ──
     'crysnovax', 'pasqua',
     // ── Freeway design ──
@@ -1245,6 +1245,25 @@ function designDefault(ctx) {
     return c;
 }
 
+// ── Design: relay — compact caption used by the raw relay buttons menu ──
+function designRelay(ctx) {
+    const { userTag, creator, prefix, total, uptime, version, status,
+            sortedCategories, byCategory, CATEGORY_LABELS } = ctx;
+    let c = `╭━━━〔 ✦ ${ctx.botName || 'SUKUNA MD'} ✦ 〕━━━╮\n`;
+    c += `┃ 👤 ${userTag}\n┃ 👑 ${creator}\n┃ ⚡ ${status}\n`;
+    c += `┃ ⏱️ ${uptime}  •  v${version}\n┃ 🧩 ${total} commands\n`;
+    c += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
+    c += `Tap a button below for a quick action.\n\n`;
+    for (const cat of sortedCategories) {
+        const names = byCategory[cat];
+        if (!names?.length) continue;
+        const label = CATEGORY_LABELS[cat] || cat.toUpperCase();
+        c += `▸ ${label}: ${names.length} commands\n`;
+    }
+    c += `\nUse ${prefix}menu for the complete command list.`;
+    return c;
+}
+
 const BUILDERS = {
     default: designDefault,
     nor: designNor,
@@ -1271,6 +1290,7 @@ const BUILDERS = {
     // Chroma renders interactive buttons in commands/admin/menu.js. The
     // caption text falls back to the default `nor` design.
     chroma:   designChroma,
+    relay:    designRelay,
     // ── Pasqua signature designs ──
     crysnovax: designCrysnovax,
     pasqua: designPasqua,

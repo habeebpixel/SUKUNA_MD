@@ -19,7 +19,6 @@ const RAPIDAPI_HOST_OVERRIDE = 'spotify-music-mp3-downloader-api.p.rapidapi.com'
 const RAPIDAPI_SPOTIFY_HOST = process.env.RAPIDAPI_SPOTIFY_HOST || RAPIDAPI_HOST_OVERRIDE || 'spotify-music-mp3-downloader-api.p.rapidapi.com';
 const YOUTUBE_URL_RE = /(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/i;
 const SPOTIFY_URL_RE = /^https?:\/\/open\.spotify\.com\/track\/[A-Za-z0-9]+/i;
-const recentPlaySelections = new Map();
 let youtubeDl;
 
 function getYoutubeDl() {
@@ -253,18 +252,7 @@ async function fetchThumbnailBuffer(url) {
     } catch (_) { return null; }
 }
 
-async function preparePlaySelection(video) {
-    if (!video?.url || video.spotifyUrl) return video;
-    try {
-        const downloadUrl = await getDirectUrl(video.url, ['18', 'best'], 'mp3');
-        return { ...video, downloadUrl };
-    } catch (error) {
-        console.warn('[play] prefetch MP3 URL failed; will retry on tap:', error.message);
-        return video;
-    }
-}
-
-async function sendFormatCard({ sock, msg, from, video, prefix = '.' }) {
+async function sendSongPreview({ sock, msg, from, video }) {
     const body = [
         `🎬 *${video.title}*`,
         video.author ? `👤 ${video.author}` : '',
@@ -273,35 +261,8 @@ async function sendFormatCard({ sock, msg, from, video, prefix = '.' }) {
         'Choose a format to download:',
     ].filter(Boolean).join('\n');
     const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
-    const sourceUrl = video.url || video.spotifyUrl || '';
-    recentPlaySelections.set(from, { ...video, expiresAt: Date.now() + 15 * 60 * 1000 });
-    await sock.relayMessage(from, {
-        buttonsMessage: {
-            text: body,
-            contentText: body,
-            footerText: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」',
-            locationMessage: {
-                name: video.title,
-                address: 'YouTube Download',
-                jpegThumbnail: thumbnail || undefined,
-            },
-            buttons: [
-                { buttonId: `${prefix}ytmp3 ${sourceUrl}`, buttonText: { displayText: 'MP3' }, type: 1 },
-                { buttonId: `${prefix}ymp4 ${sourceUrl}`, buttonText: { displayText: 'MP4' }, type: 1 },
-            ],
-            headerType: 6,
-        },
-    }, {
-        additionalNodes: [{
-            tag: 'biz',
-            attrs: {},
-            content: [{
-                tag: 'interactive',
-                attrs: { type: 'native_flow', v: '1' },
-                content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
-            }],
-        }],
-    });
+    if (thumbnail) await sock.sendMessage(from, { image: thumbnail, caption: body }, { quoted: msg });
+    else await sock.sendMessage(from, { text: body }, { quoted: msg });
 }
 
 async function downloadAndSend({ sock, msg, from, selection, type }) {
@@ -312,9 +273,7 @@ async function downloadAndSend({ sock, msg, from, selection, type }) {
         await sock.sendMessage(from, { audio, mimetype: rapid.mimetype || 'audio/mpeg', fileName: `${safeFileName(title)}.mp3`, ptt: false }, { quoted: msg });
         return;
     }
-    const source = type === 'mp3' && selection.downloadUrl
-        ? selection.downloadUrl
-        : await getDirectUrl(selection.url, type === 'mp3' ? ['18', 'best'] : ['18', 'best[height<=360]', 'best'], type);
+    const source = await getDirectUrl(selection.url, type === 'mp3' ? ['18', 'best'] : ['18', 'best[height<=360]', 'best'], type);
     const sourceBuffer = await fetchBuffer(source, type === 'mp3' ? MAX_AUDIO_BYTES : MAX_VIDEO_BYTES);
     if (type === 'mp3') {
         const audio = await convertToMp3(sourceBuffer);
@@ -324,89 +283,21 @@ async function downloadAndSend({ sock, msg, from, selection, type }) {
     }
 }
 
-function unwrapButtonMessage(message) {
-    let content = message || {};
-    for (let i = 0; i < 8; i += 1) {
-        const nested = content?.ephemeralMessage?.message
-            || content?.viewOnceMessage?.message
-            || content?.viewOnceMessageV2?.message;
-        if (!nested) break;
-        content = nested;
-    }
-    return content;
-}
-
-function recoverLegacyButtonId(buttonId, msg) {
-    const direct = String(buttonId || '').trim();
-    if (/^\.(ytmp3|ytmp4|ymp4)\s+/i.test(direct)) return direct;
-    const label = direct.toUpperCase();
-    if (label !== 'MP3' && label !== 'MP4') return direct;
-    const response = unwrapButtonMessage(msg?.message || {});
-    const responseContext = response?.buttonsResponseMessage?.contextInfo
-        || response?.extendedTextMessage?.contextInfo
-        || response?.contextInfo
-        || {};
-    const quoted = unwrapButtonMessage(responseContext.quotedMessage || {});
-    const buttons = quoted?.buttonsMessage?.buttons || [];
-    const selected = buttons.find(button => String(button?.buttonText?.displayText || '').toUpperCase() === label);
-    return selected?.buttonId || direct;
-}
-
-async function handleLegacyButton(buttonId, { sock, msg, from }) {
-    const recovered = recoverLegacyButtonId(buttonId, msg);
-    const direct = String(recovered || '').trim();
-    const match = direct.match(/^\.(ytmp3|ytmp4|ymp4)\s+(.+)$/i);
-    const label = direct.toUpperCase();
-    const cached = recentPlaySelections.get(from);
-    if (!match && label !== 'MP3' && label !== 'MP4') return false;
-    if (cached?.expiresAt < Date.now()) recentPlaySelections.delete(from);
-    const type = match ? (match[1].toLowerCase() === 'ytmp3' ? 'mp3' : 'mp4') : (label === 'MP3' ? 'mp3' : 'mp4');
-    const selection = match
-        ? (SPOTIFY_URL_RE.test(match[2].trim())
-            ? { ...(cached || {}), spotifyUrl: match[2].trim(), title: cached?.title || 'Spotify track' }
-            : { ...(cached || {}), url: normalizeYoutubeUrl(match[2].trim()), title: cached?.title || 'YouTube media' })
-        : cached;
-    if (!selection || selection.expiresAt < Date.now()) {
-        await sock.sendMessage(from, { text: '⏳ This play selection expired. Run `.play <song>` again.' }, { quoted: msg });
-        return true;
-    }
-    await sock.sendMessage(from, { react: { text: '⏳', key: msg.key } }).catch(() => {});
-    try {
-        await downloadAndSend({ sock, msg, from, selection, type });
-        await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
-    } catch (error) {
-        console.error(`[play legacy ${type}]`, error.stderr || error.message);
-        await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
-        await sock.sendMessage(from, { text: `❌ ${type.toUpperCase()} download failed: ${String(error.message || 'unknown error').slice(0, 220) }` }, { quoted: msg });
-    }
-    return true;
-}
-
-function hasRecentSelection(from) {
-    const selection = recentPlaySelections.get(from);
-    if (!selection || selection.expiresAt < Date.now()) {
-        recentPlaySelections.delete(from);
-        return false;
-    }
-    return true;
-}
-
 module.exports = {
     name: 'play',
     aliases: ['song', 'music', 'audio'],
     description: 'Search YouTube and choose MP3 or MP4 from a rich preview',
     usage: '.play <song name or URL>',
     category: 'media',
-    handleLegacyButton,
-    hasRecentSelection,
     async execute({ sock, msg, from, args, reply, prefix = '.' }) {
         const query = args.join(' ').trim();
         if (!query) return reply('🎵 *Usage:* .play <song name or YouTube URL>\n*Example:* .play Essence Wizkid');
         await reply(`🔍 Searching YouTube for: *${query}*...`);
         await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } }).catch(() => {});
         try {
-            const video = await preparePlaySelection(await resolveVideo(query));
-            await sendFormatCard({ sock, msg, from, video, prefix });
+            const video = await resolveVideo(query);
+            await sendSongPreview({ sock, msg, from, video });
+            await downloadAndSend({ sock, msg, from, selection: video, type: 'mp3' });
             await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
         } catch (error) {
             console.error('[play] resolve error:', error.stderr || error.message);

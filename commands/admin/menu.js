@@ -266,7 +266,7 @@ module.exports = {
         // no visible blank gap before "Read more" like a plain space causes.
         const READ_MORE = String.fromCharCode(8206) + '\u200B'.repeat(4000);
         const anchorLine = caption.match(/^.*latform.*$/im) || caption.match(/^.*status.*$/im);
-        if (anchorLine) {
+        if (designKey !== 'relay' && anchorLine) {
             const cutAt = caption.indexOf(anchorLine[0]) + anchorLine[0].length;
             caption = caption.slice(0, cutAt) + '\n' + READ_MORE + caption.slice(cutAt);
         } else {
@@ -316,6 +316,34 @@ module.exports = {
                     version,
                     uptime,
                     status,
+                });
+            }
+
+            if (designKey === 'relay') {
+                return await sock.relayMessage(from, {
+                    buttonsMessage: {
+                        text: caption,
+                        contentText: caption,
+                        footerText: '「 𝙋𝙖𝙨𝙦𝙪𝙖 𝙏𝙚𝙘𝙝 • 𝙍𝙚𝙡𝙖𝙮 」',
+                        buttons: [
+                            { buttonId: 'commands_btn', buttonText: { displayText: '📋 Commands' }, type: 1 },
+                            { buttonId: 'alive_btn', buttonText: { displayText: '💚 Alive' }, type: 1 },
+                            { buttonId: 'ping_btn', buttonText: { displayText: '⚡ Ping' }, type: 1 },
+                            { buttonId: 'owner_btn', buttonText: { displayText: '👑 Owner' }, type: 1 },
+                            { buttonId: 'support_btn', buttonText: { displayText: '📢 Support' }, type: 1 },
+                        ],
+                        headerType: 2,
+                    },
+                }, {
+                    additionalNodes: [{
+                        tag: 'biz',
+                        attrs: {},
+                        content: [{
+                            tag: 'interactive',
+                            attrs: { type: 'native_flow', v: '1' },
+                            content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+                        }],
+                    }],
                 });
             }
 
