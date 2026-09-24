@@ -369,6 +369,15 @@ async function handleLegacyButton(buttonId, { sock, msg, from }) {
     return true;
 }
 
+function hasRecentSelection(from) {
+    const selection = recentPlaySelections.get(from);
+    if (!selection || selection.expiresAt < Date.now()) {
+        recentPlaySelections.delete(from);
+        return false;
+    }
+    return true;
+}
+
 module.exports = {
     name: 'play',
     aliases: ['song', 'music', 'audio'],
@@ -376,6 +385,7 @@ module.exports = {
     usage: '.play <song name or URL>',
     category: 'media',
     handleLegacyButton,
+    hasRecentSelection,
     async execute({ sock, msg, from, args, reply, prefix = '.' }) {
         const query = args.join(' ').trim();
         if (!query) return reply('🎵 *Usage:* .play <song name or YouTube URL>\n*Example:* .play Essence Wizkid');
