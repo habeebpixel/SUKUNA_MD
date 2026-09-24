@@ -287,6 +287,11 @@ module.exports = {
                 const { boldSans } = require('../../utils/styleBox');
                 caption = caption.replace(/[A-Za-z0-9]/g, (char) => boldSans(char));
             } catch (_) {}
+        } else if (designKey === 'relay') {
+            try {
+                const { boldSans } = require('../../utils/styleBox');
+                caption = caption.replace(/[A-Za-z0-9]/g, (char) => boldSans(char));
+            } catch (_) {}
         } else if (activeFontNum !== 1) {
             try { caption = fontSystem.convert(caption, activeFontNum); } catch (_) {}
         }
@@ -330,6 +335,8 @@ module.exports = {
                             address: 'SUKUNA MD Menu',
                             jpegThumbnail: fs.existsSync(IMAGE_PATH)
                                 ? fs.readFileSync(IMAGE_PATH)
+                                : fs.existsSync(DEFAULT_IMAGE_PATH)
+                                    ? fs.readFileSync(DEFAULT_IMAGE_PATH)
                                 : undefined,
                         },
                         buttons: [

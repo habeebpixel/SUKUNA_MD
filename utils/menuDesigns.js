@@ -1249,18 +1249,21 @@ function designDefault(ctx) {
 function designRelay(ctx) {
     const { userTag, creator, prefix, total, uptime, version, status,
             sortedCategories, byCategory, CATEGORY_LABELS } = ctx;
-    let c = `╭━━━〔 ✦ ${ctx.botName || 'SUKUNA MD'} ✦ 〕━━━╮\n`;
-    c += `┃ 👤 ${userTag}\n┃ 👑 ${creator}\n┃ ⚡ ${status}\n`;
-    c += `┃ ⏱️ ${uptime}  •  v${version}\n┃ 🧩 ${total} commands\n`;
-    c += `╰━━━━━━━━━━━━━━━━━━━━╯\n\n`;
-    c += `Tap a button below for a quick action.\n\n`;
+    let c = `◤━━━━━━━━━━━━━━━━━━━━◥\n`;
+    c += `      ✦ ${ctx.botName || 'SUKUNA MD'} ✦\n`;
+    c += `◣━━━━━━━━━━━━━━━━━━━━◢\n\n`;
+    c += `┌─〔 SYSTEM STATUS 〕─┐\n`;
+    c += `│ 👤 ${userTag}\n│ 👑 ${creator}\n│ ⚡ ${status}\n`;
+    c += `│ ⏱️ ${uptime}  •  v${version}\n│ 🧩 ${total} commands\n`;
+    c += `└────────────────────┘\n\n`;
+    c += `✦ QUICK ACTIONS — TAP A BUTTON ✦\n\n`;
     for (const cat of sortedCategories) {
         const names = byCategory[cat];
         if (!names?.length) continue;
         const label = CATEGORY_LABELS[cat] || cat.toUpperCase();
         c += `▸ ${label}: ${names.length} commands\n`;
     }
-    c += `\nUse ${prefix}menu for the complete command list.`;
+    c += `\n━━━━━━━━━━━━━━━━━━━━\nUse ${prefix}menu for the complete command list.`;
     return c;
 }
 
