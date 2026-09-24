@@ -252,15 +252,43 @@ async function fetchThumbnailBuffer(url) {
     } catch (_) { return null; }
 }
 
-async function sendSongPreview({ sock, msg, from, video }) {
+async function sendFormatCard({ sock, msg, from, video, prefix = '.' }) {
     const body = [
-        `🎵 *${video.title}*`,
+        `🎬 *${video.title}*`,
         video.author ? `👤 ${video.author}` : '',
         video.duration ? `⏱️ ${video.duration}` : '',
+        '',
+        'Choose a format to download:',
     ].filter(Boolean).join('\n');
     const thumbnail = await fetchThumbnailBuffer(video.thumbnail);
-    if (thumbnail) await sock.sendMessage(from, { image: thumbnail, caption: body }, { quoted: msg });
-    else await sock.sendMessage(from, { text: body }, { quoted: msg });
+    const sourceUrl = video.url || video.spotifyUrl || '';
+    await sock.relayMessage(from, {
+        buttonsMessage: {
+            text: body,
+            contentText: body,
+            footerText: '「 𝙏𝙞𝙢𝙚 - 𝙏𝙞𝙢𝙚𝙡𝙚𝙨𝙨 」',
+            locationMessage: {
+                name: video.title,
+                address: 'YouTube Download',
+                jpegThumbnail: thumbnail || undefined,
+            },
+            buttons: [
+                { buttonId: `${prefix}ytmp3 ${sourceUrl}`, buttonText: { displayText: 'MP3' }, type: 1 },
+                { buttonId: `${prefix}ymp4 ${sourceUrl}`, buttonText: { displayText: 'MP4' }, type: 1 },
+            ],
+            headerType: 6,
+        },
+    }, {
+        additionalNodes: [{
+            tag: 'biz',
+            attrs: {},
+            content: [{
+                tag: 'interactive',
+                attrs: { type: 'native_flow', v: '1' },
+                content: [{ tag: 'native_flow', attrs: { v: '9', name: 'mixed' } }],
+            }],
+        }],
+    });
 }
 
 async function downloadAndSend({ sock, msg, from, selection, type }) {
@@ -281,21 +309,41 @@ async function downloadAndSend({ sock, msg, from, selection, type }) {
     }
 }
 
+async function handleLegacyButton(buttonId, { sock, msg, from }) {
+    const match = String(buttonId || '').match(/^\.(ytmp3|ytmp4|ymp4)\s+(.+)$/i);
+    if (!match) return false;
+    const type = match[1].toLowerCase() === 'ytmp3' ? 'mp3' : 'mp4';
+    const source = String(match[2]).trim();
+    const selection = SPOTIFY_URL_RE.test(source)
+        ? { spotifyUrl: source, title: 'Spotify track' }
+        : { url: normalizeYoutubeUrl(source), title: 'YouTube media' };
+    await sock.sendMessage(from, { react: { text: '⬇️', key: msg.key } }).catch(() => {});
+    try {
+        await downloadAndSend({ sock, msg, from, selection, type });
+        await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
+    } catch (error) {
+        console.error(`[play legacy ${type}]`, error.stderr || error.message);
+        await sock.sendMessage(from, { react: { text: '❌', key: msg.key } }).catch(() => {});
+        await sock.sendMessage(from, { text: `❌ ${type.toUpperCase()} download failed: ${String(error.message || 'unknown error').slice(0, 220) }` }, { quoted: msg });
+    }
+    return true;
+}
+
 module.exports = {
     name: 'play',
     aliases: ['song', 'music', 'audio'],
-    description: 'Search YouTube, show a short preview, and send the song audio',
+    description: 'Search YouTube and choose MP3 or MP4 from a rich preview',
     usage: '.play <song name or URL>',
     category: 'media',
-    async execute({ sock, msg, from, args, reply }) {
+    handleLegacyButton,
+    async execute({ sock, msg, from, args, reply, prefix = '.' }) {
         const query = args.join(' ').trim();
         if (!query) return reply('🎵 *Usage:* .play <song name or YouTube URL>\n*Example:* .play Essence Wizkid');
         await reply(`🔍 Searching YouTube for: *${query}*...`);
         await sock.sendMessage(from, { react: { text: '🔍', key: msg.key } }).catch(() => {});
         try {
             const video = await resolveVideo(query);
-            await sendSongPreview({ sock, msg, from, video });
-            await downloadAndSend({ sock, msg, from, selection: video, type: 'mp3' });
+            await sendFormatCard({ sock, msg, from, video, prefix });
             await sock.sendMessage(from, { react: { text: '✅', key: msg.key } }).catch(() => {});
         } catch (error) {
             console.error('[play] resolve error:', error.stderr || error.message);
