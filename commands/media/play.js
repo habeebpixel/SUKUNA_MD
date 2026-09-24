@@ -327,7 +327,11 @@ function recoverLegacyButtonId(buttonId, msg) {
     const label = direct.toUpperCase();
     if (label !== 'MP3' && label !== 'MP4') return direct;
     const response = unwrapButtonMessage(msg?.message || {});
-    const quoted = unwrapButtonMessage(response?.buttonsResponseMessage?.contextInfo?.quotedMessage || {});
+    const responseContext = response?.buttonsResponseMessage?.contextInfo
+        || response?.extendedTextMessage?.contextInfo
+        || response?.contextInfo
+        || {};
+    const quoted = unwrapButtonMessage(responseContext.quotedMessage || {});
     const buttons = quoted?.buttonsMessage?.buttons || [];
     const selected = buttons.find(button => String(button?.buttonText?.displayText || '').toUpperCase() === label);
     return selected?.buttonId || direct;
