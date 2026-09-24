@@ -321,6 +321,7 @@ module.exports = {
                     version,
                     uptime,
                     status,
+                    imagePath: fs.existsSync(IMAGE_PATH) ? IMAGE_PATH : DEFAULT_IMAGE_PATH,
                 });
             }
 

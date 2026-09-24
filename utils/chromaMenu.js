@@ -6,13 +6,7 @@
 
 const { generateWAMessageFromContent, prepareWAMessageMedia } = require('@pasqua-baileys/baileys');
 const config = require('../config');
-
-const MENU_IMAGE_URLS = [
-    'https://files.catbox.moe/xcmgzc.jpg',
-    'https://files.catbox.moe/grc4jn.jpg',
-    'https://files.catbox.moe/r8zoof.jpg',
-];
-let menuImageIndex = 0;
+const fs = require('fs');
 const CHANNEL_URL = 'https://whatsapp.com/channel/0029Vb8YB2T90x2zvQLnEb2k';
 const TELEGRAM_URL = config.owner?.telegram
     ? `https://${String(config.owner.telegram).replace(/^https?:\/\//i, '')}`
@@ -22,11 +16,6 @@ const COUPON_CODE = process.env.PASQUA_MENU_COUPON || 'PASQUA TECH';
 const COUPON_EXPIRES_AT = process.env.PASQUA_MENU_COUPON_EXPIRES_AT || '2026-10-28T23:59:59+01:00';
 const CATEGORY_ORDER = ['owner', 'admin', 'moderation', 'economy', 'fun', 'media', 'ai', 'utility', 'group', 'general', 'unicode', 'textmaker', 'games', 'anime-nsfw', '18plus'];
 
-function nextMenuImage() {
-    const url = MENU_IMAGE_URLS[menuImageIndex % MENU_IMAGE_URLS.length];
-    menuImageIndex += 1;
-    return url;
-}
 function titleCase(category) {
     return String(category || 'general').replace(/(^|-)(\w)/g, (_, divider, letter) => `${divider ? ' ' : ''}${letter.toUpperCase()}`);
 }
@@ -135,11 +124,12 @@ function buildChromaContent({ imageMessage, surface, buttons }) {
     };
 }
 
-async function sendChromaMenu({ sock, jid, quoted, prefix = '.', commands }) {
+async function sendChromaMenu({ sock, jid, quoted, prefix = '.', commands, imagePath }) {
     const cards = commandCards(commands);
     const totalCmds = cards.reduce((sum, card) => sum + card.commands.length, 0);
-    const imageUrl = nextMenuImage();
-    const { imageMessage } = await prepareWAMessageMedia({ image: { url: imageUrl } }, { upload: sock.waUploadToServer });
+    const imageBuffer = imagePath && fs.existsSync(imagePath) ? fs.readFileSync(imagePath) : null;
+    const media = imageBuffer ? { image: imageBuffer } : { image: Buffer.from('') };
+    const { imageMessage } = await prepareWAMessageMedia(media, { upload: sock.waUploadToServer });
     const surface = buildChromaSurface({ cards, totalCmds });
     const buttons = [
         singleSelect(`Ξ OPEN MENU (${totalCmds})`, buildCategorySections(cards, prefix)),
@@ -155,4 +145,4 @@ async function sendChromaMenu({ sock, jid, quoted, prefix = '.', commands }) {
     return wrapped;
 }
 
-module.exports = { sendChromaMenu, commandCards, couponOffer, buildChromaSurface, buildChromaContent, MENU_IMAGE_URLS, CHANNEL_URL, TELEGRAM_URL, PASQUA_BRAND, COUPON_CODE, COUPON_EXPIRES_AT };
+module.exports = { sendChromaMenu, commandCards, couponOffer, buildChromaSurface, buildChromaContent, CHANNEL_URL, TELEGRAM_URL, PASQUA_BRAND, COUPON_CODE, COUPON_EXPIRES_AT };
