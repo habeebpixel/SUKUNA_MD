@@ -12,6 +12,8 @@ const TELEGRAM_URL = config.owner?.telegram
     ? `https://${String(config.owner.telegram).replace(/^https?:\/\//i, '')}`
     : 'https://t.me/Pasquaking';
 const PASQUA_BRAND = 'PASQUA TECH';
+const COUPON_CODE = process.env.PASQUA_MENU_COUPON || 'PASQUA TECH';
+const COUPON_EXPIRES_AT = process.env.PASQUA_MENU_COUPON_EXPIRES_AT || '2026-10-28T23:59:59+01:00';
 const CATEGORY_ORDER = ['owner', 'admin', 'moderation', 'economy', 'fun', 'media', 'ai', 'utility', 'group', 'general', 'unicode', 'textmaker', 'games', 'anime-nsfw', '18plus'];
 
 function titleCase(category) {
@@ -32,16 +34,30 @@ function commandCards(commands) {
         commands: Array.from(grouped.get(category).keys()).sort().map(name => ({ name, description: grouped.get(category).get(name) })),
     }));
 }
+function couponOffer(now = new Date()) {
+    const expiry = new Date(COUPON_EXPIRES_AT);
+    if (Number.isNaN(expiry.getTime()) || now > expiry) return { active: false, text: '🏷️ Limited-time offer ended' };
+    return { active: true, code: COUPON_CODE, endsOn: new Intl.DateTimeFormat('en-GB', { day: 'numeric', month: 'short', timeZone: 'Africa/Lagos' }).format(expiry) };
+}
 function text(id, value, variant = 'body') {
     return { id, component: 'Text', text: value, variant };
 }
 function buildChromaSurface({ cards, totalCmds, botName = PASQUA_BRAND }) {
+    const offer = couponOffer();
     const tableCats = cards.slice(0, 9);
     const components = [
-        { id: 'root', component: 'Column', align: 'center', children: ['topRule', 'title', 'bottomRule', 'tableCard', 'dividerBottom', 'footer'] },
-        text('topRule', '━━━━━━━━━━━━━━━━━━━━', 'caption'),
+        { id: 'root', component: 'Column', align: 'center', children: ['promotion', 'title', 'dividerTop', 'tableCard', 'dividerBottom', 'footer'] },
+        { id: 'promotion', component: 'Column', children: ['promotionRow'] },
+        { id: 'promotionRow', component: 'Row', children: ['promoTag', 'promoDivider', 'promotionColumn'] },
+        text('promoTag', '🏷️', 'h5'),
+        text('promoDivider', '│', 'caption'),
+        { id: 'promotionColumn', component: 'Column', children: ['promoName', 'promoEnds', 'promoCodeDivider', 'promoCode'] },
+        text('promoName', botName, 'h5'),
+        text('promoEnds', offer.active ? `Ends on ${offer.endsOn}` : offer.text, 'h5'),
+        { id: 'promoCodeDivider', component: 'Divider' },
+        text('promoCode', offer.active ? `Code: ${offer.code} | INC.` : '', 'h5'),
         { id: 'title', component: 'Text', text: `⟡ ${botName} ⟡`, variant: 'h5' },
-        text('bottomRule', '━━━━━━━━━━━━━━━━━━━━', 'caption'),
+        { id: 'dividerTop', component: 'Divider' },
         { id: 'tableCard', component: 'Card', child: 'tableColumn' },
         { id: 'tableColumn', component: 'Column', children: ['tableHeader', 'tableDivider', ...tableCats.flatMap((_, index) => [`row${index}`, `divider${index}`])] },
         { id: 'tableHeader', component: 'Row', children: ['categoryHeader', 'countHeader'] },
@@ -121,4 +137,4 @@ async function sendChromaMenu({ sock, jid, quoted, prefix = '.', commands, image
     return wrapped;
 }
 
-module.exports = { sendChromaMenu, commandCards, buildChromaSurface, buildChromaContent, CHANNEL_URL, TELEGRAM_URL, PASQUA_BRAND };
+module.exports = { sendChromaMenu, commandCards, couponOffer, buildChromaSurface, buildChromaContent, CHANNEL_URL, TELEGRAM_URL, PASQUA_BRAND, COUPON_CODE, COUPON_EXPIRES_AT };
